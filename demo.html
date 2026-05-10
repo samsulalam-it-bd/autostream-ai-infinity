@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AutoStream AI Infinity</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0e0f16;
+            color: #fff;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .card {
+            background: #1a1b25;
+            border: 1px solid rgba(255, 255, 255, .06);
+            border-radius: 12px;
+        }
+
+        .badge-green {
+            background: rgba(34, 197, 94, .12);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, .2);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-red {
+            background: rgba(239, 68, 68, .12);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, .2);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-yellow {
+            background: rgba(234, 179, 8, .12);
+            color: #facc15;
+            border: 1px solid rgba(234, 179, 8, .2);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-blue {
+            background: rgba(100, 112, 243, .15);
+            color: #a5b4fc;
+            border: 1px solid rgba(100, 112, 243, .25);
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 14px;
+            border-radius: 10px;
+            font-size: 13.5px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, .45);
+            cursor: pointer;
+            transition: .2s;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, .05);
+            color: #fff;
+        }
+
+        .nav-link.active {
+            background: rgba(100, 112, 243, .18);
+            color: #a5b4fc;
+            border: 1px solid rgba(100, 112, 243, .2);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: .2s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: #4f52e8;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #6470f3;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, .07);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, .1);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, .12);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, .15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, .2);
+        }
+
+        .input {
+            width: 100%;
+            background: #0e0f16;
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 8px;
+            padding: 9px 14px;
+            color: #fff;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .input:focus {
+            border-color: #4f52e8;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #1a1b25, #13141c);
+            border: 1px solid rgba(255, 255, 255, .06);
+            border-radius: 14px;
+            padding: 22px;
+            transition: .3s;
+        }
+
+        .stat-card:hover {
+            border-color: rgba(100, 112, 243, .3);
+            box-shadow: 0 0 30px rgba(100, 112, 243, .1);
+        }
+
+        .progress-bar {
+            height: 5px;
+            background: rgba(255, 255, 255, .07);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4f52e8, #7c3aed);
+            border-radius: 3px;
+        }
+
+        .terminal {
+            background: #090a0f;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.7;
+            padding: 16px;
+            border-radius: 0 0 12px 12px;
+            min-height: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-info {
+            color: #a5b4fc;
+        }
+
+        .log-warn {
+            color: #facc15;
+        }
+
+        .log-error {
+            color: #f87171;
+        }
+
+        .log-success {
+            color: #4ade80;
+        }
+
+        .log-dim {
+            color: rgba(255, 255, 255, .3);
+        }
+
+        .drop-zone {
+            border: 2px dashed rgba(255, 255, 255, .12);
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: .3s;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.drag {
+            border-color: #4f52e8;
+            background: rgba(79, 82, 232, .06);
+        }
+
+        .tab-btn {
+            padding: 7px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: .2s;
+            border: none;
+            background: transparent;
+            color: rgba(255, 255, 255, .45);
+        }
+
+        .tab-btn.active {
+            background: #4f52e8;
+            color: #fff;
+        }
+
+        .tab-btn:not(.active):hover {
+            background: rgba(255, 255, 255, .06);
+            color: #fff;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .4
+            }
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: 0
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(8px);
+                opacity: 0
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1
+            }
+        }
+
+        .animate-pulse {
+            animation: pulse 2s infinite;
+        }
+
+        .animate-blink {
+            animation: blink 1s step-end infinite;
+        }
+
+        .animate-in {
+            animation: slideIn .35s ease-out;
+        }
+
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 110%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a1b25;
+            border: 1px solid rgba(255, 255, 255, .1);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            z-index: 99;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, .015);
+        }
+
+        select option {
+            background: #1a1b25;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0e0f16;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4f52e8;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body class="flex h-screen overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside
+        style="width:230px;min-width:230px;background:#13141c;border-right:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;">
+        <div style="padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,.05);">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div
+                    style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#4f52e8,#7c3aed);display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px rgba(100,112,243,.3);">
+                    <i data-lucide="zap" style="width:18px;height:18px;color:#fff;"></i>
+                </div>
+                <div>
+                    <div style="font-size:13px;font-weight:700;color:#fff;">AutoStream AI</div>
+                    <div style="font-size:9px;color:rgba(255,255,255,.25);letter-spacing:3px;text-transform:uppercase;">
+                        Infinity</div>
+                </div>
+            </div>
+        </div>
+        <nav style="padding:12px 10px;flex:1;display:flex;flex-direction:column;gap:2px;">
+            <div class="nav-link active" onclick="showPage('dashboard',this)"><i data-lucide="layout-dashboard"
+                    style="width:16px;height:16px;"></i>Dashboard</div>
+            <div class="nav-link" onclick="showPage('accounts',this)"><i data-lucide="users"
+                    style="width:16px;height:16px;"></i>Accounts & Groups</div>
+            <div class="nav-link" onclick="showPage('vault',this)"><i data-lucide="key-round"
+                    style="width:16px;height:16px;"></i>API Vault</div>
+            <div class="nav-link" onclick="showPage('upload',this)"><i data-lucide="upload"
+                    style="width:16px;height:16px;"></i>Upload Zone</div>
+            <div class="nav-link" onclick="showPage('logs',this)"><i data-lucide="terminal"
+                    style="width:16px;height:16px;"></i>Live Logs</div>
+        </nav>
+        <div
+            style="padding:14px 18px;border-top:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:8px;">
+            <i data-lucide="activity" style="width:13px;height:13px;color:#4ade80;" class="animate-pulse"></i>
+            <span style="font-size:11px;color:rgba(255,255,255,.3);">System Online</span>
+        </div>
+    </aside>
+
+    <!-- MAIN -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <!-- Top bar -->
+        <header
+            style="background:rgba(14,15,22,.8);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.05);padding:13px 28px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+            <div id="page-title" style="font-size:15px;font-weight:600;color:#fff;">Dashboard</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:11px;color:rgba(255,255,255,.25);" class="mono">v1.0.0</span>
+                <div
+                    style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#4f52e8,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;">
+                    A</div>
+            </div>
+        </header>
+
+        <main style="flex:1;overflow-y:auto;padding:28px;" id="main-content">
+
+            <!-- ──────────────────── DASHBOARD ──────────────────── -->
+            <div class="page active animate-in" id="page-dashboard">
+                <p style="color:rgba(255,255,255,.35);font-size:13px;margin-bottom:20px;">Overview of your AutoStream AI
+                    system</p>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+                    <div class="stat-card">
+                        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px;">
+                            <div
+                                style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#4f52e8,#7c3aed);display:flex;align-items:center;justify-content:center;">
+                                <i data-lucide="upload" style="width:17px;height:17px;color:#fff;"></i></div>
+                            <span style="font-size:11px;color:#4ade80;font-weight:600;">+18%</span>
+                        </div>
+                        <div style="font-size:28px;font-weight:800;color:#fff;">47</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:2px;">Uploads Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="margin-bottom:14px;">
+                            <div
+                                style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#16a34a,#15803d);display:flex;align-items:center;justify-content:center;">
+                                <i data-lucide="key-round" style="width:17px;height:17px;color:#fff;"></i></div>
+                        </div>
+                        <div style="font-size:28px;font-weight:800;color:#fff;">23</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:2px;">Active API Keys</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="margin-bottom:14px;">
+                            <div
+                                style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#d97706,#b45309);display:flex;align-items:center;justify-content:center;">
+                                <i data-lucide="clock" style="width:17px;height:17px;color:#fff;"></i></div>
+                        </div>
+                        <div style="font-size:28px;font-weight:800;color:#fff;">134</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:2px;">Pending Schedules</div>
+                    </div>
+                    <div class="stat-card">
+                        <div style="margin-bottom:14px;">
+                            <div
+                                style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#dc2626,#9f1239);display:flex;align-items:center;justify-content:center;">
+                                <i data-lucide="users" style="width:17px;height:17px;color:#fff;"></i></div>
+                        </div>
+                        <div style="font-size:28px;font-weight:800;color:#fff;">12</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:2px;">Total Accounts</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
+                    <div class="card" style="padding:22px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+                            <div style="font-size:14px;font-weight:600;">Upload Activity (7 days)</div>
+                            <span class="badge-blue">Weekly</span>
+                        </div>
+                        <svg width="100%" height="160" viewBox="0 0 500 160" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stop-color="#4f52e8" stop-opacity=".35" />
+                                    <stop offset="95%" stop-color="#4f52e8" stop-opacity="0" />
+                                </linearGradient>
+                            </defs>
+                            <polyline points="0,120 70,90 140,100 210,55 280,75 350,30 420,45 500,35" fill="none"
+                                stroke="#6470f3" stroke-width="2.5" stroke-linejoin="round" />
+                            <polygon points="0,120 70,90 140,100 210,55 280,75 350,30 420,45 500,35 500,160 0,160"
+                                fill="url(#g1)" />
+                            <text x="0" y="155" fill="rgba(255,255,255,.25)" font-size="10">Mon</text>
+                            <text x="70" y="155" fill="rgba(255,255,255,.25)" font-size="10">Tue</text>
+                            <text x="140" y="155" fill="rgba(255,255,255,.25)" font-size="10">Wed</text>
+                            <text x="210" y="155" fill="rgba(255,255,255,.25)" font-size="10">Thu</text>
+                            <text x="280" y="155" fill="rgba(255,255,255,.25)" font-size="10">Fri</text>
+                            <text x="350" y="155" fill="rgba(255,255,255,.25)" font-size="10">Sat</text>
+                            <text x="420" y="155" fill="rgba(255,255,255,.25)" font-size="10">Sun</text>
+                        </svg>
+                    </div>
+                    <div class="card" style="padding:22px;">
+                        <div style="font-size:14px;font-weight:600;margin-bottom:16px;">System Health</div>
+                        <div
+                            style="border-bottom:1px solid rgba(255,255,255,.05);padding:10px 0;display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:13px;color:rgba(255,255,255,.55);">PostgreSQL</span>
+                            <div style="display:flex;align-items:center;gap:5px;"><i data-lucide="check-circle"
+                                    style="width:14px;color:#4ade80;"></i><span
+                                    style="color:#4ade80;font-size:12px;font-weight:600;">healthy</span></div>
+                        </div>
+                        <div
+                            style="border-bottom:1px solid rgba(255,255,255,.05);padding:10px 0;display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:13px;color:rgba(255,255,255,.55);">Redis Cache</span>
+                            <div style="display:flex;align-items:center;gap:5px;"><i data-lucide="check-circle"
+                                    style="width:14px;color:#4ade80;"></i><span
+                                    style="color:#4ade80;font-size:12px;font-weight:600;">healthy</span></div>
+                        </div>
+                        <div style="padding:10px 0;display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:13px;color:rgba(255,255,255,.55);">Celery Workers</span>
+                            <div style="display:flex;align-items:center;gap:5px;"><i data-lucide="check-circle"
+                                    style="width:14px;color:#4ade80;"></i><span
+                                    style="color:#4ade80;font-size:12px;font-weight:600;">4 active</span></div>
+                        </div>
+                        <div style="border-top:1px solid rgba(255,255,255,.05);margin-top:8px;padding-top:12px;">
+                            <div
+                                style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.3);font-size:12px;">
+                                <i data-lucide="film" style="width:13px;"></i>312 total source videos</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ──────────────────── ACCOUNTS ──────────────────── -->
+            <div class="page animate-in" id="page-accounts">
+                <p style="color:rgba(255,255,255,.35);font-size:13px;margin-bottom:20px;">12 accounts across all
+                    platforms</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                    <div style="display:flex;gap:6px;" id="platform-tabs">
+                        <button class="tab-btn active" onclick="switchTab(this,'youtube')">▶ YouTube</button>
+                        <button class="tab-btn" onclick="switchTab(this,'facebook')">f Facebook</button>
+                        <button class="tab-btn" onclick="switchTab(this,'instagram')">◈ Instagram</button>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary" onclick="showModal('groupModal')"><i data-lucide="plus"
+                                style="width:14px;"></i>Create Group</button>
+                        <button class="btn btn-primary" onclick="showToast('Google OAuth window would open here')"><i
+                                data-lucide="plus" style="width:14px;"></i>Add Account</button>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:14px;" id="group-badges">
+                    <span class="badge-blue" style="padding:5px 12px;">🎮 Gaming Network</span>
+                    <span class="badge-blue" style="padding:5px 12px;">📱 Tech Reviews</span>
+                </div>
+                <div class="card" style="overflow:hidden;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,.06);">
+                                <th
+                                    style="padding:11px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;font-weight:600;">
+                                    Channel</th>
+                                <th
+                                    style="padding:11px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;font-weight:600;">
+                                    Status</th>
+                                <th
+                                    style="padding:11px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;font-weight:600;">
+                                    Subscribers</th>
+                                <th
+                                    style="padding:11px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;font-weight:600;">
+                                    Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="accounts-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ──────────────────── API VAULT ──────────────────── -->
+            <div class="page animate-in" id="page-vault">
+                <p style="color:rgba(255,255,255,.35);font-size:13px;margin-bottom:20px;">Manage Google Cloud
+                    credentials for dynamic API rotation</p>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+                    <div class="card" style="padding:18px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;">31</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:4px;">Total Keys</div>
+                    </div>
+                    <div class="card" style="padding:18px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#4ade80;">23</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:4px;">Active</div>
+                    </div>
+                    <div class="card" style="padding:18px;text-align:center;">
+                        <div style="font-size:28px;font-weight:800;color:#f87171;">8</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:4px;">Quota Locked</div>
+                    </div>
+                </div>
+                <div class="card" style="padding:20px;margin-bottom:18px;">
+                    <div
+                        style="font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+                        <i data-lucide="upload" style="width:15px;color:#818cf8;"></i>Upload Credentials</div>
+                    <div class="drop-zone" id="dropZone" ondragover="this.classList.add('drag');event.preventDefault();"
+                        ondragleave="this.classList.remove('drag');" ondrop="handleDrop(event);"
+                        onclick="showToast('File picker opened — drop your Google Cloud JSON files here')">
+                        <i data-lucide="cloud-upload"
+                            style="width:40px;height:40px;color:rgba(255,255,255,.2);margin-bottom:12px;"></i>
+                        <div style="font-size:14px;font-weight:500;color:rgba(255,255,255,.7);margin-bottom:4px;">Drag &
+                            drop Google Cloud JSON files</div>
+                        <div style="font-size:12px;color:rgba(255,255,255,.3);">Supports uploading 50+ files at once •
+                            Only .json accepted</div>
+                    </div>
+                </div>
+                <div class="card" style="overflow:hidden;">
+                    <div
+                        style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:8px;">
+                        <i data-lucide="key-round" style="width:15px;color:#818cf8;"></i>
+                        <span style="font-size:14px;font-weight:600;">API Key Pool</span>
+                        <span class="badge-blue" style="margin-left:auto;">31 keys</span>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid rgba(255,255,255,.06);">
+                                <th
+                                    style="padding:10px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;">
+                                    Project</th>
+                                <th
+                                    style="padding:10px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;">
+                                    Status</th>
+                                <th
+                                    style="padding:10px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;">
+                                    Daily Usage</th>
+                                <th
+                                    style="padding:10px 16px;text-align:left;font-size:11px;color:rgba(255,255,255,.3);text-transform:uppercase;">
+                                    Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vault-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ──────────────────── UPLOAD ZONE ──────────────────── -->
+            <div class="page animate-in" id="page-upload">
+                <p style="color:rgba(255,255,255,.35);font-size:13px;margin-bottom:20px;">Sync, process and schedule
+                    video uploads</p>
+                <div class="card" style="padding:20px;margin-bottom:16px;">
+                    <div
+                        style="font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+                        <i data-lucide="folder-open" style="width:15px;color:#818cf8;"></i>Step 1 — Sync Google Drive
+                        Folder</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                        <div><label
+                                style="font-size:12px;color:rgba(255,255,255,.4);display:block;margin-bottom:6px;">Google
+                                Drive Folder Link</label>
+                            <input class="input" id="driveLink"
+                                placeholder="https://drive.google.com/drive/folders/..." />
+                        </div>
+                        <div><label
+                                style="font-size:12px;color:rgba(255,255,255,.4);display:block;margin-bottom:6px;">Account</label>
+                            <select class="input">
+                                <option>TechReviews YT (YouTube)</option>
+                                <option>Gaming Network (YouTube)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="handleSync()"><i data-lucide="refresh-cw"
+                            style="width:14px;"></i><span id="sync-label">Sync Source</span></button>
+                    <span id="sync-msg" style="font-size:13px;margin-left:12px;"></span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <div class="card" style="padding:20px;">
+                        <div
+                            style="font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="film" style="width:15px;color:#818cf8;"></i>Step 2 — Select Videos <span
+                                class="badge-blue" style="margin-left:auto;" id="sel-count">0/5 selected</span></div>
+                        <div id="video-list"
+                            style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;"></div>
+                    </div>
+                    <div class="card" style="padding:20px;">
+                        <div
+                            style="font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+                            <i data-lucide="layout-grid" style="width:15px;color:#818cf8;"></i>Step 3 — Configure</div>
+                        <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;">
+                            <div id="wm-check" onclick="toggleCheck('wm')"
+                                style="width:18px;height:18px;border-radius:5px;background:#4f52e8;border:1px solid #4f52e8;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">
+                                <i data-lucide="check" style="width:11px;color:#fff;"></i></div>
+                            <span style="font-size:13px;color:rgba(255,255,255,.7);">Add Watermark</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:10px;margin-bottom:16px;cursor:pointer;">
+                            <div id="ac-check" onclick="toggleCheck('ac')"
+                                style="width:18px;height:18px;border-radius:5px;border:1px solid rgba(255,255,255,.2);cursor:pointer;flex-shrink:0;">
+                            </div>
+                            <span style="font-size:13px;color:rgba(255,255,255,.7);">Auto-Comment after upload</span>
+                        </label>
+                        <label style="font-size:12px;color:rgba(255,255,255,.4);display:block;margin-bottom:6px;">Target
+                            Group</label>
+                        <select class="input" style="margin-bottom:16px;">
+                            <option>Gaming Network</option>
+                            <option>Tech Reviews</option>
+                        </select>
+                        <div style="display:flex;gap:8px;margin-bottom:14px;">
+                            <button id="tab-drip" class="tab-btn active" onclick="switchSchedulerTab('drip')">💧 Auto
+                                Drip</button>
+                            <button id="tab-cal" class="tab-btn" onclick="switchSchedulerTab('cal')">📅 Calendar
+                                View</button>
+                        </div>
+                        <div id="drip-panel">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                                <div><label
+                                        style="font-size:11px;color:rgba(255,255,255,.4);display:block;margin-bottom:5px;">Start
+                                        Date & Time</label><input type="datetime-local" class="input" id="startDT" />
+                                </div>
+                                <div><label
+                                        style="font-size:11px;color:rgba(255,255,255,.4);display:block;margin-bottom:5px;">Spread
+                                        Over (days)</label><input type="number" class="input" value="7" id="dripDays"
+                                        min="1" /></div>
+                            </div>
+                            <button class="btn btn-primary" style="width:100%;" onclick="handleDrip()"><i
+                                    data-lucide="droplets" style="width:14px;"></i>Schedule Auto Drip</button>
+                            <div id="drip-msg" style="font-size:12px;margin-top:8px;"></div>
+                        </div>
+                        <div id="cal-panel"
+                            style="display:none;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:24px;text-align:center;">
+                            <i data-lucide="calendar"
+                                style="width:32px;height:32px;color:rgba(255,255,255,.2);margin-bottom:8px;"></i>
+                            <div style="font-size:13px;color:rgba(255,255,255,.4);">Visual Calendar — drag-and-drop view
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ──────────────────── LOGS ──────────────────── -->
+            <div class="page animate-in" id="page-logs">
+                <p style="color:rgba(255,255,255,.35);font-size:13px;margin-bottom:20px;">Real-time terminal output from
+                    the AutoStream system</p>
+                <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px;">
+                    <select class="input" style="width:auto;" onchange="filterLogs(this.value)">
+                        <option value="">ALL LEVELS</option>
+                        <option>INFO</option>
+                        <option>WARNING</option>
+                        <option>ERROR</option>
+                        <option>SUCCESS</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="exportLogs()"><i data-lucide="download"
+                            style="width:14px;"></i>Export</button>
+                    <button class="btn btn-danger" onclick="clearLogs()"><i data-lucide="trash-2"
+                            style="width:14px;"></i>Clear</button>
+                    <button id="stream-btn" class="btn btn-primary" onclick="toggleStream()"><i data-lucide="circle"
+                            style="width:10px;fill:#4ade80;color:#4ade80;"></i>Live Stream</button>
+                </div>
+                <div class="card" style="overflow:hidden;">
+                    <div
+                        style="background:#090a0f;padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.06);">
+                        <div style="display:flex;gap:6px;">
+                            <div style="width:11px;height:11px;border-radius:50%;background:#ef4444;opacity:.6;"></div>
+                            <div style="width:11px;height:11px;border-radius:50%;background:#eab308;opacity:.6;"></div>
+                            <div style="width:11px;height:11px;border-radius:50%;background:#22c55e;opacity:.6;"></div>
+                        </div>
+                        <span style="font-size:11px;color:rgba(255,255,255,.25);" class="mono">autostream — system
+                            logs</span>
+                        <span id="live-badge" style="margin-left:auto;font-size:11px;color:#4ade80;display:none;"
+                            class="mono animate-pulse">● LIVE</span>
+                    </div>
+                    <div class="terminal" id="terminal"></div>
+                    <div style="background:#090a0f;padding:7px 14px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:rgba(255,255,255,.2);"
+                        class="mono" id="log-status">0 lines</div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast"
+        style="position:fixed;bottom:24px;right:24px;background:#1a1b25;border:1px solid rgba(100,112,243,.4);border-radius:10px;padding:12px 20px;font-size:13px;color:#a5b4fc;display:none;z-index:999;box-shadow:0 8px 32px rgba(0,0,0,.4);max-width:340px;">
+    </div>
+
+    <!-- GROUP MODAL -->
+    <div id="groupModal"
+        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:50;align-items:center;justify-content:center;">
+        <div class="card animate-in" style="width:380px;padding:24px;">
+            <h3 style="font-size:16px;font-weight:600;margin-bottom:18px;">Create Channel Group</h3>
+            <label style="font-size:12px;color:rgba(255,255,255,.4);display:block;margin-bottom:5px;">Group Name</label>
+            <input class="input" placeholder="e.g. Gaming Network" style="margin-bottom:12px;" id="groupName" />
+            <label style="font-size:12px;color:rgba(255,255,255,.4);display:block;margin-bottom:5px;">Platform</label>
+            <select class="input" style="margin-bottom:18px;">
+                <option>YouTube</option>
+                <option>Facebook</option>
+                <option>Instagram</option>
+            </select>
+            <div style="display:flex;gap:10px;">
+                <button class="btn btn-secondary" style="flex:1;" onclick="hideModal('groupModal')">Cancel</button>
+                <button class="btn btn-primary" style="flex:1;" onclick="createGroup()">Create Group</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── Data ─────────────────────────────────────────────
+        const ACCOUNTS = {
+            youtube: [
+                { name: 'TechReviews Central', id: 'UC_tech_001', status: 'active', subs: '2,340,000' },
+                { name: 'Gaming Network Hub', id: 'UC_gaming_002', status: 'active', subs: '890,500' },
+                { name: 'Daily Vlogs Channel', id: 'UC_vlogs_003', status: 'expired', subs: '120,000' },
+                { name: 'Tutorial Academy', id: 'UC_tut_004', status: 'active', subs: '445,200' },
+            ],
+            facebook: [
+                { name: 'Tech Page Official', id: 'fb_tech_001', status: 'active', subs: '567,000' },
+                { name: 'Gaming Community', id: 'fb_gaming_002', status: 'active', subs: '234,000' },
+            ],
+            instagram: [
+                { name: '@techreviews_ig', id: 'ig_tech_001', status: 'active', subs: '1,200,000' },
+                { name: '@gamingnetwork_ig', id: 'ig_game_002', status: 'expired', subs: '340,000' },
+            ]
+        };
+        const KEYS = [
+            { proj: 'autostream-prod-01', svc: 'google', locked: false, use: 2340, lim: 10000 },
+            { proj: 'autostream-prod-02', svc: 'google', locked: false, use: 8900, lim: 10000 },
+            { proj: 'autostream-backup-03', svc: 'google', locked: true, use: 10000, lim: 10000 },
+            { proj: 'autostream-prod-04', svc: 'google', locked: false, use: 1200, lim: 10000 },
+            { proj: 'autostream-prod-05', svc: 'google', locked: false, use: 500, lim: 10000 },
+        ];
+        const VIDEOS = [
+            { name: 'viral_gaming_clip_001.mp4', status: 'pending' },
+            { name: 'tech_review_iphone16.mp4', status: 'pending' },
+            { name: 'daily_vlog_episode_42.mp4', status: 'pending' },
+            { name: 'coding_tutorial_react.mp4', status: 'pending' },
+            { name: 'travel_vlog_tokyo_2025.mp4', status: 'pending' },
+        ];
+        let selectedVideos = new Set();
+        let streaming = false;
+        let streamInterval = null;
+        let allLogs = [];
+        let currentPlatform = 'youtube';
+
+        // ── Navigation ────────────────────────────────────────
+        function showPage(id, el) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+            document.getElementById('page-' + id).classList.add('active');
+            el.classList.add('active');
+            const titles = { dashboard: 'Dashboard', accounts: 'Accounts & Groups', vault: 'API Vault', upload: 'Upload Zone', logs: 'Live Logs' };
+            document.getElementById('page-title').textContent = titles[id] || id;
+            if (id === 'accounts') renderAccounts(currentPlatform);
+            if (id === 'vault') renderVault();
+            if (id === 'upload') renderVideos();
+        }
+
+        // ── Accounts ──────────────────────────────────────────
+        function renderAccounts(platform) {
+            const tbody = document.getElementById('accounts-tbody');
+            tbody.innerHTML = ACCOUNTS[platform].map(a => `
+  <tr>
+    <td style="padding:11px 16px;">
+      <div style="font-size:13px;font-weight:500;">${a.name}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,.3);">${a.id}</div>
+    </td>
+    <td style="padding:11px 16px;"><span class="${a.status === 'active' ? 'badge-green' : 'badge-red'}">${a.status}</span></td>
+    <td style="padding:11px 16px;font-size:13px;color:rgba(255,255,255,.5);">${a.subs}</td>
+    <td style="padding:11px 16px;">
+      <button class="btn btn-danger" onclick="showToast('Account removed')" style="padding:5px 10px;font-size:12px;"><i data-lucide="trash-2" style="width:12px;"></i></button>
+    </td>
+  </tr>`).join('');
+            lucide.createIcons();
+        }
+
+        function switchTab(el, platform) {
+            document.querySelectorAll('#platform-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+            currentPlatform = platform;
+            renderAccounts(platform);
+        }
+
+        // ── Vault ─────────────────────────────────────────────
+        function renderVault() {
+            document.getElementById('vault-tbody').innerHTML = KEYS.map(k => `
+  <tr>
+    <td style="padding:10px 16px;"><div style="font-size:13px;font-weight:500;">${k.proj}</div><div style="font-size:11px;color:rgba(255,255,255,.3);">${k.svc}</div></td>
+    <td style="padding:10px 16px;"><span class="${k.locked ? 'badge-red' : 'badge-green'}">${k.locked ? 'Locked' : 'Active'}</span></td>
+    <td style="padding:10px 16px;width:200px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="progress-bar" style="flex:1;"><div class="progress-fill" style="width:${Math.round(k.use / k.lim * 100)}%"></div></div>
+        <span style="font-size:11px;color:rgba(255,255,255,.35);white-space:nowrap;">${k.use.toLocaleString()}/${k.lim.toLocaleString()}</span>
+      </div>
+    </td>
+    <td style="padding:10px 16px;">
+      ${k.locked ? `<button class="btn btn-secondary" onclick="showToast('Key unlocked!')" style="padding:5px 10px;font-size:12px;"><i data-lucide="unlock" style="width:12px;"></i></button>` : ''}
+      <button class="btn btn-danger" onclick="showToast('Key removed')" style="padding:5px 10px;font-size:12px;margin-left:4px;"><i data-lucide="trash-2" style="width:12px;"></i></button>
+    </td>
+  </tr>`).join('');
+            lucide.createIcons();
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            document.getElementById('dropZone').classList.remove('drag');
+            const n = e.dataTransfer.files.length;
+            showToast(`✅ ${n} JSON file${n !== 1 ? 's' : ''} uploaded! Added to API Vault.`);
+        }
+
+        // ── Upload Zone ───────────────────────────────────────
+        function renderVideos() {
+            const list = document.getElementById('video-list');
+            list.innerHTML = VIDEOS.map((v, i) => `
+  <div onclick="toggleVideo(${i},this)" data-i="${i}" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;border:1px solid transparent;cursor:pointer;transition:.2s;" class="vrow">
+    <div class="vcheck" style="width:18px;height:18px;border-radius:5px;border:1px solid rgba(255,255,255,.2);flex-shrink:0;display:flex;align-items:center;justify-content:center;"></div>
+    <i data-lucide="film" style="width:14px;color:rgba(255,255,255,.25);flex-shrink:0;"></i>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:12px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v.name}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.3);">${v.status}</div>
+    </div>
+  </div>`).join('');
+            lucide.createIcons();
+        }
+
+        function toggleVideo(i, el) {
+            if (selectedVideos.has(i)) { selectedVideos.delete(i); el.style.background = ''; el.style.border = '1px solid transparent'; el.querySelector('.vcheck').innerHTML = ''; el.querySelector('.vcheck').style.background = ''; el.querySelector('.vcheck').style.borderColor = 'rgba(255,255,255,.2)'; }
+            else { selectedVideos.add(i); el.style.background = 'rgba(79,82,232,.15)'; el.style.border = '1px solid rgba(79,82,232,.3)'; el.querySelector('.vcheck').innerHTML = '<i data-lucide="check" style="width:11px;color:#fff;"></i>'; el.querySelector('.vcheck').style.background = '#4f52e8'; el.querySelector('.vcheck').style.borderColor = '#4f52e8'; }
+            lucide.createIcons();
+            document.getElementById('sel-count').textContent = `${selectedVideos.size}/${VIDEOS.length} selected`;
+        }
+
+        let wmOn = true, acOn = false;
+        function toggleCheck(t) {
+            if (t === 'wm') { wmOn = !wmOn; const el = document.getElementById('wm-check'); el.style.background = wmOn ? '#4f52e8' : ''; el.style.borderColor = wmOn ? '#4f52e8' : 'rgba(255,255,255,.2)'; el.innerHTML = wmOn ? '<i data-lucide="check" style="width:11px;color:#fff;"></i>' : ''; }
+            else { acOn = !acOn; const el = document.getElementById('ac-check'); el.style.background = acOn ? '#4f52e8' : ''; el.style.borderColor = acOn ? '#4f52e8' : 'rgba(255,255,255,.2)'; el.innerHTML = acOn ? '<i data-lucide="check" style="width:11px;color:#fff;"></i>' : ''; }
+            lucide.createIcons();
+        }
+
+        function switchSchedulerTab(t) {
+            document.getElementById('tab-drip').classList.toggle('active', t === 'drip');
+            document.getElementById('tab-cal').classList.toggle('active', t === 'cal');
+            document.getElementById('drip-panel').style.display = t === 'drip' ? 'block' : 'none';
+            document.getElementById('cal-panel').style.display = t === 'cal' ? 'block' : 'none';
+        }
+
+        function handleSync() {
+            const link = document.getElementById('driveLink').value;
+            if (!link) { showToast('⚠️ Please enter a Google Drive folder link'); return; }
+            const btn = document.querySelector('#page-upload .btn-primary');
+            document.getElementById('sync-label').textContent = 'Syncing...';
+            setTimeout(() => { document.getElementById('sync-label').textContent = 'Sync Source'; document.getElementById('sync-msg').textContent = '✅ Sync task dispatched! 5 videos found.'; document.getElementById('sync-msg').style.color = '#4ade80'; }, 1800);
+        }
+
+        function handleDrip() {
+            if (!selectedVideos.size) { showToast('⚠️ Select at least one video first'); return; }
+            const days = parseInt(document.getElementById('dripDays').value) || 7;
+            const interval = Math.round((days * 24) / selectedVideos.size * 10) / 10;
+            document.getElementById('drip-msg').innerHTML = `<span style="color:#4ade80;">✅ Scheduled ${selectedVideos.size} videos over ${days} days (every ${interval}h)</span>`;
+            showToast('✅ Auto Drip schedule created!');
+        }
+
+        // ── Logs ──────────────────────────────────────────────
+        const LOG_SAMPLES = [
+            { l: 'INFO', s: 'beat_scheduler', m: 'Checking pending schedules... Found 3 upcoming uploads', c: 'log-info' },
+            { l: 'INFO', s: 'celery_worker', m: '[Pipeline] Starting: viral_gaming_clip_001.mp4', c: 'log-info' },
+            { l: 'INFO', s: 'drive_downloader', m: 'Downloading from Drive (file: 1Bx9_abc123) — 142.5 MB', c: 'log-info' },
+            { l: 'SUCCESS', s: 'drive_downloader', m: 'Download complete: /tmp/videos/viral_gaming_clip_001.mp4', c: 'log-success' },
+            { l: 'INFO', s: 'ffmpeg_engine', m: 'Running FFmpeg uniquifier (crop=iw-1:ih-1, brightness+0.01, watermark)', c: 'log-info' },
+            { l: 'SUCCESS', s: 'ffmpeg_engine', m: 'FFmpeg processing complete → /tmp/videos/processed_viral_gaming_clip_001.mp4', c: 'log-success' },
+            { l: 'INFO', s: 'gemini_ai', m: 'Extracting 3 frames for Gemini 1.5 Flash analysis...', c: 'log-info' },
+            { l: 'SUCCESS', s: 'gemini_ai', m: 'AI Title: "You Won\'t BELIEVE What This Gaming Setup Can Actually Do!! 🤯"', c: 'log-success' },
+            { l: 'INFO', s: 'youtube_uploader', m: 'Uploading to YouTube — TechReviews Central (progress: 45%)', c: 'log-info' },
+            { l: 'INFO', s: 'youtube_uploader', m: 'YouTube upload progress: 78%', c: 'log-info' },
+            { l: 'SUCCESS', s: 'youtube_uploader', m: 'Upload complete → https://youtube.com/watch?v=dQw4w9WgXcQ', c: 'log-success' },
+            { l: 'INFO', s: 'telegram_bot', m: 'Alert sent → ✅ Upload Successful: TechReviews Central', c: 'log-info' },
+            { l: 'INFO', s: 'cleanup', m: 'Temp files deleted from /tmp/videos/', c: 'log-info' },
+            { l: 'WARNING', s: 'api_rotation', m: 'Key autostream-prod-02 near quota (8900/10000). Monitoring.', c: 'log-warn' },
+            { l: 'ERROR', s: 'api_rotation', m: '403 Quota Exceeded on key autostream-prod-03 → Locking for 24h', c: 'log-error' },
+            { l: 'WARNING', s: 'api_rotation', m: 'Rotating to next key: autostream-prod-04 ✓', c: 'log-warn' },
+            { l: 'INFO', s: 'telegram_bot', m: 'Alert sent → ⚠️ API Key Quota Exhausted! Rotated to next key.', c: 'log-info' },
+            { l: 'SUCCESS', s: 'beat_scheduler', m: 'Daily API usage counters reset at 00:00 UTC', c: 'log-success' },
+        ];
+
+        function appendLog(log) {
+            const t = document.getElementById('terminal');
+            const time = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = 'terminal-line';
+            div.innerHTML = `<span class="log-dim">${time}</span>  <span class="${log.c}" style="font-weight:600;display:inline-block;min-width:72px;">[${log.l}]</span>  <span style="color:rgba(255,255,255,.35);display:inline-block;min-width:130px;">${log.s}</span>  <span style="color:rgba(255,255,255,.8);">${log.m}</span>`;
+            t.appendChild(div);
+            t.scrollTop = t.scrollHeight;
+            allLogs.push({ time, level: log.l, source: log.s, msg: log.m });
+            document.getElementById('log-status').textContent = `${allLogs.length} lines • Filter: ALL`;
+        }
+
+        function toggleStream() {
+            if (streaming) {
+                clearInterval(streamInterval); streaming = false;
+                document.getElementById('stream-btn').innerHTML = '<i data-lucide="circle" style="width:10px;fill:#4ade80;color:#4ade80;"></i>Live Stream';
+                document.getElementById('live-badge').style.display = 'none';
+                lucide.createIcons();
+            } else {
+                streaming = true;
+                document.getElementById('stream-btn').innerHTML = '<i data-lucide="circle" style="width:10px;fill:#ef4444;color:#ef4444;" class="animate-pulse"></i>Stop Stream';
+                document.getElementById('live-badge').style.display = 'inline';
+                lucide.createIcons();
+                let idx = 0;
+                appendLog(LOG_SAMPLES[idx++ % LOG_SAMPLES.length]);
+                streamInterval = setInterval(() => appendLog(LOG_SAMPLES[idx++ % LOG_SAMPLES.length]), 1800);
+            }
+        }
+
+        function clearLogs() { allLogs = []; document.getElementById('terminal').innerHTML = ''; document.getElementById('log-status').textContent = '0 lines'; }
+        function filterLogs(v) { showToast(v ? `Showing ${v} logs only` : 'Showing all logs'); }
+        function exportLogs() {
+            const txt = allLogs.map(l => `[${l.time}] [${l.level}] [${l.source}] ${l.msg}`).join('\n');
+            const a = document.createElement('a'); a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txt || 'No logs'); a.download = 'autostream_logs.txt'; a.click();
+        }
+
+        // ── Helpers ───────────────────────────────────────────
+        function showToast(msg) {
+            const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+        function showModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+        function createGroup() { showToast(`✅ Group "${document.getElementById('groupName').value || 'New Group'}" created`); hideModal('groupModal'); }
+
+        // ── Init ──────────────────────────────────────────────
+        window.onload = () => {
+            lucide.createIcons();
+            renderAccounts('youtube');
+            renderVault();
+            // Boot logs
+            setTimeout(() => appendLog({ l: 'INFO', s: 'system', m: 'AutoStream AI Infinity v1.0.0 started', c: 'log-info' }), 400);
+            setTimeout(() => appendLog({ l: 'INFO', s: 'database', m: 'Connected to PostgreSQL — 312 videos in source_videos', c: 'log-info' }), 900);
+            setTimeout(() => appendLog({ l: 'INFO', s: 'redis', m: 'Redis connection established', c: 'log-info' }), 1300);
+            setTimeout(() => appendLog({ l: 'SUCCESS', s: 'celery', m: '4 workers active and ready', c: 'log-success' }), 1700);
+        };
+    </script>
+</body>
+
+</html>

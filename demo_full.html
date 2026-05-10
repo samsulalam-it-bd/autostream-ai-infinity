@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AutoStream AI — API Tester</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0e0f16;
+            color: #fff;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        aside {
+            width: 270px;
+            min-width: 270px;
+            background: #13141c;
+            border-right: 1px solid rgba(255, 255, 255, .06);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .logo {
+            padding: 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, .06);
+        }
+
+        .logo h1 {
+            font-size: 15px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo p {
+            font-size: 11px;
+            color: rgba(255, 255, 255, .3);
+            margin-top: 2px;
+        }
+
+        .sec {
+            padding: 10px 12px 4px;
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, .25);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .ep {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: .15s;
+            font-size: 12px;
+            color: rgba(255, 255, 255, .5);
+            margin: 1px 6px;
+        }
+
+        .ep:hover {
+            background: rgba(255, 255, 255, .05);
+            color: #fff;
+        }
+
+        .ep.active {
+            background: rgba(100, 112, 243, .15);
+            color: #a5b4fc;
+        }
+
+        .m {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: 'JetBrains Mono', monospace;
+            flex-shrink: 0;
+            min-width: 38px;
+            text-align: center;
+        }
+
+        .GET {
+            background: rgba(34, 197, 94, .15);
+            color: #4ade80;
+        }
+
+        .POST {
+            background: rgba(100, 112, 243, .15);
+            color: #818cf8;
+        }
+
+        .PATCH {
+            background: rgba(234, 179, 8, .15);
+            color: #facc15;
+        }
+
+        .DELETE {
+            background: rgba(239, 68, 68, .15);
+            color: #f87171;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            padding: 14px 22px;
+            border-bottom: 1px solid rgba(255, 255, 255, .06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        header h2 {
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            color: #a5b4fc;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+            animation: pulse 2s infinite;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .3
+            }
+        }
+
+        .cols {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .pane {
+            padding: 18px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .pane:first-child {
+            border-right: 1px solid rgba(255, 255, 255, .06);
+        }
+
+        label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, .4);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            background: #090a0f;
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 7px;
+            padding: 8px 11px;
+            color: #fff;
+            font-size: 12px;
+            outline: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: #4f52e8;
+        }
+
+        textarea {
+            height: 110px;
+            resize: vertical;
+        }
+
+        select option {
+            background: #1a1b25;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 9px;
+            background: #4f52e8;
+            color: #fff;
+            border: none;
+            border-radius: 7px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: .2s;
+            margin-top: 4px;
+        }
+
+        .btn:hover {
+            background: #6470f3;
+        }
+
+        .resp {
+            background: #090a0f;
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-all;
+            flex: 1;
+            overflow-y: auto;
+            color: #94a3b8;
+            min-height: 200px;
+        }
+
+        .resp.ok {
+            border-color: rgba(34, 197, 94, .2);
+        }
+
+        .resp.err {
+            border-color: rgba(239, 68, 68, .2);
+        }
+
+        .stt {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .s2 {
+            background: rgba(34, 197, 94, .1);
+            color: #4ade80;
+        }
+
+        .s4 {
+            background: rgba(239, 68, 68, .1);
+            color: #f87171;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0e0f16;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4f52e8;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <aside>
+        <div class="logo">
+            <h1>⚡ AutoStream AI Demo</h1>
+            <p>Mock API — All Endpoints Testable</p>
+        </div>
+        <div class="sec">Dashboard</div>
+        <div class="ep active" onclick="use(this,'GET','/api/v1/dashboard/stats','')"> <span
+                class="m GET">GET</span>/dashboard/stats</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/dashboard/health','')"> <span
+                class="m GET">GET</span>/dashboard/health</div>
+        <div class="sec">Accounts</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/accounts/?platform=youtube','')"> <span
+                class="m GET">GET</span>/accounts/ (YouTube)</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/accounts/?platform=facebook','')"> <span
+                class="m GET">GET</span>/accounts/ (Facebook)</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/accounts/?platform=instagram','')"> <span
+                class="m GET">GET</span>/accounts/ (Instagram)</div>
+        <div class="ep"
+            onclick="use(this,'POST','/api/v1/accounts/',JSON.stringify({platform:'youtube',channel_name:'New Channel',channel_id:'UC_demo_001',subscriber_count:5000},null,2))">
+            <span class="m POST">POST</span>/accounts/ (create)
+        </div>
+        <div class="ep" onclick="use(this,'PATCH','/api/v1/accounts/acc1',JSON.stringify({status:'active'},null,2))">
+            <span class="m PATCH">PATCH</span>/accounts/{id}
+        </div>
+        <div class="ep" onclick="use(this,'DELETE','/api/v1/accounts/acc1','')"> <span
+                class="m DELETE">DELETE</span>/accounts/{id}</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/accounts/groups','')"> <span
+                class="m GET">GET</span>/accounts/groups</div>
+        <div class="ep"
+            onclick="use(this,'POST','/api/v1/accounts/groups',JSON.stringify({name:'Gaming Network',platform:'youtube'},null,2))">
+            <span class="m POST">POST</span>/accounts/groups (create)
+        </div>
+        <div class="ep" onclick="use(this,'DELETE','/api/v1/accounts/groups/grp1','')"> <span
+                class="m DELETE">DELETE</span>/accounts/groups/{id}</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/accounts/oauth/google/init','')"> <span
+                class="m GET">GET</span>/oauth/google/init</div>
+        <div class="sec">API Vault</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/api-vault/','')"> <span class="m GET">GET</span>/api-vault/
+            (list)</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/api-vault/stats/summary','')"> <span
+                class="m GET">GET</span>/api-vault/stats/summary</div>
+        <div class="ep" onclick="use(this,'POST','/api/v1/api-vault/upload-json','(multipart upload)')"> <span
+                class="m POST">POST</span>/api-vault/upload-json</div>
+        <div class="ep" onclick="use(this,'POST','/api/v1/api-vault/key1/unlock','')"> <span
+                class="m POST">POST</span>/api-vault/{id}/unlock</div>
+        <div class="ep" onclick="use(this,'DELETE','/api/v1/api-vault/key1','')"> <span
+                class="m DELETE">DELETE</span>/api-vault/{id}</div>
+        <div class="sec">Videos</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/videos/','')"> <span class="m GET">GET</span>/videos/ (all)
+        </div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/videos/?status_filter=pending','')"> <span
+                class="m GET">GET</span>/videos/ (pending)</div>
+        <div class="ep"
+            onclick="use(this,'POST','/api/v1/videos/sync-drive',JSON.stringify({folder_link:'https://drive.google.com/drive/folders/1ABCdemo',account_id:'acc1'},null,2))">
+            <span class="m POST">POST</span>/videos/sync-drive
+        </div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/videos/task-status/task123','')"> <span
+                class="m GET">GET</span>/videos/task-status/{id}</div>
+        <div class="ep" onclick="use(this,'DELETE','/api/v1/videos/vid1','')"> <span
+                class="m DELETE">DELETE</span>/videos/{id}</div>
+        <div class="sec">Schedules</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/schedules/?is_published=false','')"> <span
+                class="m GET">GET</span>/schedules/ (pending)</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/schedules/?is_published=true','')"> <span
+                class="m GET">GET</span>/schedules/ (published)</div>
+        <div class="ep"
+            onclick="use(this,'POST','/api/v1/schedules/',JSON.stringify({video_id:'vid1',account_id:'acc1',scheduled_time:new Date(Date.now()+3600000).toISOString(),add_watermark:true},null,2))">
+            <span class="m POST">POST</span>/schedules/ (create)
+        </div>
+        <div class="ep"
+            onclick="use(this,'POST','/api/v1/schedules/auto-drip',JSON.stringify({video_ids:['vid1','vid2','vid3'],start_datetime:new Date(Date.now()+3600000).toISOString(),total_days:7,add_watermark:true,auto_comment:false},null,2))">
+            <span class="m POST">POST</span>/schedules/auto-drip
+        </div>
+        <div class="ep" onclick="use(this,'POST','/api/v1/schedules/sch1/trigger','')"> <span
+                class="m POST">POST</span>/schedules/{id}/trigger</div>
+        <div class="ep" onclick="use(this,'DELETE','/api/v1/schedules/sch1','')"> <span
+                class="m DELETE">DELETE</span>/schedules/{id}</div>
+        <div class="sec">Logs</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/logs/?limit=10','')"> <span class="m GET">GET</span>/logs/
+            (latest 10)</div>
+        <div class="ep" onclick="use(this,'GET','/api/v1/logs/?level=ERROR','')"> <span class="m GET">GET</span>/logs/
+            (errors only)</div>
+        <div class="ep" onclick="testSSE(this)"> <span class="m GET">GET</span>/logs/stream (SSE)</div>
+    </aside>
+    <main>
+        <header>
+            <h2 id="ep-label">GET /api/v1/dashboard/stats</h2>
+            <div><span class="dot"></span><span style="font-size:12px;color:#4ade80;font-weight:600;">Mock API:
+                    Active</span></div>
+        </header>
+        <div class="cols">
+            <div class="pane">
+                <div><label>Method</label><select id="method">
+                        <option>GET</option>
+                        <option>POST</option>
+                        <option>PATCH</option>
+                        <option>DELETE</option>
+                    </select></div>
+                <div><label>Endpoint</label><input id="url" value="/api/v1/dashboard/stats" /></div>
+                <div><label>Request Body (JSON)</label><textarea id="body"
+                        placeholder="Leave empty for GET requests"></textarea></div>
+                <button class="btn" onclick="send()">▶ Send Request</button>
+            </div>
+            <div class="pane">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><label>Response</label><span
+                        id="badge" class="stt"></span></div>
+                <div class="resp" id="resp">Select an endpoint from the sidebar, then click ▶ Send Request</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // ── In-Memory Mock Database ───────────────────────────────────────────────
+        let DB = {
+            groups: [
+                { id: 'grp1', name: 'Gaming Network', platform: 'youtube', description: 'Primary gaming group', created_at: '2025-01-10T10:00:00Z' },
+                { id: 'grp2', name: 'Tech Reviews Hub', platform: 'youtube', description: 'Tech channels', created_at: '2025-01-12T10:00:00Z' },
+                { id: 'grp3', name: 'Facebook Pages', platform: 'facebook', description: 'All FB pages', created_at: '2025-01-15T10:00:00Z' },
+            ],
+            accounts: [
+                { id: 'acc1', platform: 'youtube', channel_name: 'TechReviews Central', channel_id: 'UC_tech_001', group_id: 'grp2', status: 'active', subscriber_count: 2340000, created_at: '2025-01-10T10:00:00Z' },
+                { id: 'acc2', platform: 'youtube', channel_name: 'Gaming Network Hub', channel_id: 'UC_gaming_002', group_id: 'grp1', status: 'active', subscriber_count: 890500, created_at: '2025-01-11T10:00:00Z' },
+                { id: 'acc3', platform: 'youtube', channel_name: 'Daily Vlogs Channel', channel_id: 'UC_vlogs_003', group_id: null, status: 'expired', subscriber_count: 120000, created_at: '2025-01-13T10:00:00Z' },
+                { id: 'acc4', platform: 'facebook', channel_name: 'Tech Page Official', channel_id: 'fb_001', group_id: 'grp3', status: 'active', subscriber_count: 567000, created_at: '2025-01-14T10:00:00Z' },
+                { id: 'acc5', platform: 'instagram', channel_name: '@techreviews_ig', channel_id: 'ig_001', group_id: null, status: 'active', subscriber_count: 1200000, created_at: '2025-01-15T10:00:00Z' },
+            ],
+            keys: [
+                { id: 'key1', service_name: 'google', project_name: 'autostream-prod-01', daily_usage: 2340, daily_limit: 10000, is_locked: false, unlock_time: null, created_at: '2025-01-10T10:00:00Z' },
+                { id: 'key2', service_name: 'google', project_name: 'autostream-prod-02', daily_usage: 8900, daily_limit: 10000, is_locked: false, unlock_time: null, created_at: '2025-01-11T10:00:00Z' },
+                { id: 'key3', service_name: 'google', project_name: 'autostream-backup-03', daily_usage: 10000, daily_limit: 10000, is_locked: true, unlock_time: '2026-02-26T10:00:00Z', lock_reason: '403 Quota Exceeded', created_at: '2025-01-12T10:00:00Z' },
+                { id: 'key4', service_name: 'google', project_name: 'autostream-prod-04', daily_usage: 1200, daily_limit: 10000, is_locked: false, unlock_time: null, created_at: '2025-01-13T10:00:00Z' },
+                { id: 'key5', service_name: 'meta', project_name: 'meta-app-01', daily_usage: 3000, daily_limit: 200000, is_locked: false, unlock_time: null, created_at: '2025-01-15T10:00:00Z' },
+            ],
+            videos: [
+                { id: 'vid1', drive_file_id: '1Abc001', original_filename: 'viral_gaming_clip_001.mp4', file_size_bytes: 142500000, ai_title: "You Won't BELIEVE This Gaming Setup!! 🤯", status: 'pending', created_at: '2025-02-01T10:00:00Z' },
+                { id: 'vid2', drive_file_id: '1Abc002', original_filename: 'tech_review_iphone16.mp4', file_size_bytes: 285000000, ai_title: null, status: 'synced', created_at: '2025-02-02T10:00:00Z' },
+                { id: 'vid3', drive_file_id: '1Abc003', original_filename: 'daily_vlog_tokyo.mp4', file_size_bytes: 98000000, ai_title: 'My UNFILTERED Tokyo Vlog 😳', status: 'uploaded', created_at: '2025-02-03T10:00:00Z' },
+            ],
+            schedules: [
+                { id: 'sch1', video_id: 'vid1', account_id: 'acc1', target_group_id: 'grp1', scheduled_time: '2026-02-25T16:00:00Z', is_published: false, published_url: null, add_watermark: true, auto_comment: false, created_at: '2025-02-20T10:00:00Z' },
+                { id: 'sch2', video_id: 'vid2', account_id: 'acc2', target_group_id: null, scheduled_time: '2026-02-26T10:00:00Z', is_published: false, published_url: null, add_watermark: true, auto_comment: true, created_at: '2025-02-21T10:00:00Z' },
+                { id: 'sch3', video_id: 'vid3', account_id: 'acc1', target_group_id: null, scheduled_time: '2026-02-24T08:00:00Z', is_published: true, published_url: 'https://youtube.com/watch?v=dQw4w9WgXcQ', add_watermark: true, auto_comment: false, created_at: '2025-02-22T10:00:00Z' },
+            ],
+            logs: [
+                { id: 'log1', level: 'INFO', source: 'system', message: 'AutoStream AI Infinity v1.0.0 started', created_at: '2026-02-25T09:00:00Z' },
+                { id: 'log2', level: 'INFO', source: 'database', message: 'Connected to PostgreSQL — 312 videos in source_videos', created_at: '2026-02-25T09:00:01Z' },
+                { id: 'log3', level: 'SUCCESS', source: 'celery', message: '4 workers active and ready', created_at: '2026-02-25T09:00:02Z' },
+                { id: 'log4', level: 'INFO', source: 'beat_scheduler', message: 'Checking pending schedules... Found 2 upcoming uploads', created_at: '2026-02-25T09:05:00Z' },
+                { id: 'log5', level: 'INFO', source: 'celery_worker', message: '[Pipeline] Starting: viral_gaming_clip_001.mp4', created_at: '2026-02-25T09:05:01Z' },
+                { id: 'log6', level: 'SUCCESS', source: 'ffmpeg_engine', message: 'FFmpeg complete → /tmp/videos/processed_viral_gaming_clip_001.mp4', created_at: '2026-02-25T09:06:30Z' },
+                { id: 'log7', level: 'SUCCESS', source: 'gemini_ai', message: 'AI title: "You Won\'t BELIEVE This Gaming Setup!! 🤯"', created_at: '2026-02-25T09:07:00Z' },
+                { id: 'log8', level: 'SUCCESS', source: 'youtube_uploader', message: 'Upload complete → https://youtube.com/watch?v=dQw4w9WgXcQ', created_at: '2026-02-25T09:09:00Z' },
+                { id: 'log9', level: 'WARNING', source: 'api_rotation', message: 'Key autostream-prod-02 near daily limit (8900/10000)', created_at: '2026-02-25T10:00:00Z' },
+                { id: 'log10', level: 'ERROR', source: 'api_rotation', message: '403 Quota Exceeded on autostream-backup-03 → Locked 24h', created_at: '2026-02-25T10:01:00Z' },
+            ],
+        };
+
+        function uid() { return 'id_' + Math.random().toString(36).slice(2); }
+        function now() { return new Date().toISOString(); }
+
+        // ── Mock API Router ───────────────────────────────────────────────────────
+        function mockAPI(method, path, body) {
+            const p = path.split('?')[0].replace(/\/+$/, '');
+            const qs = new URLSearchParams(path.includes('?') ? path.split('?')[1] : '');
+
+            // Dashboard
+            if (p === '/api/v1/dashboard/stats' && method === 'GET')
+                return [200, { total_uploads_today: 47, active_api_keys: DB.keys.filter(k => !k.is_locked).length, pending_schedules: DB.schedules.filter(s => !s.is_published).length, total_accounts: DB.accounts.length, total_videos: DB.videos.length }];
+            if (p === '/api/v1/dashboard/health' && method === 'GET')
+                return [200, { database: 'healthy', redis: 'healthy', celery: 'healthy', timestamp: now() }];
+
+            // Groups
+            if (p === '/api/v1/accounts/groups' && method === 'GET') return [200, DB.groups];
+            if (p === '/api/v1/accounts/groups' && method === 'POST') {
+                const g = { id: uid(), ...body, created_at: now() };
+                DB.groups.push(g);
+                addLog('INFO', 'api', `Group created: ${g.name}`);
+                return [201, g];
+            }
+            if (p.startsWith('/api/v1/accounts/groups/') && method === 'DELETE') {
+                const id = p.split('/').pop();
+                DB.groups = DB.groups.filter(g => g.id !== id);
+                return [204, null];
+            }
+
+            // OAuth
+            if (p === '/api/v1/accounts/oauth/google/init' && method === 'GET')
+                return [200, { auth_url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=DEMO_ID&scope=https://www.googleapis.com/auth/youtube.upload&response_type=code&redirect_uri=http://localhost:8000/api/v1/accounts/oauth/google/callback' }];
+
+            // Accounts
+            if (p === '/api/v1/accounts' && method === 'GET')
+                return [200, qs.get('platform') ? DB.accounts.filter(a => a.platform === qs.get('platform')) : DB.accounts];
+            if (p === '/api/v1/accounts' && method === 'POST') {
+                const a = { id: uid(), ...body, status: 'active', avatar_url: null, created_at: now() };
+                DB.accounts.push(a);
+                addLog('SUCCESS', 'api', `Account created: ${a.channel_name} (${a.platform})`);
+                return [201, a];
+            }
+            if (p.match(/\/api\/v1\/accounts\/[^/]+$/) && method === 'GET') {
+                const id = p.split('/').pop();
+                const a = DB.accounts.find(a => a.id === id);
+                return a ? [200, a] : [404, { detail: 'Not found' }];
+            }
+            if (p.match(/\/api\/v1\/accounts\/[^/]+$/) && method === 'PATCH') {
+                const id = p.split('/').pop();
+                const a = DB.accounts.find(a => a.id === id);
+                if (!a) return [404, { detail: 'Not found' }];
+                Object.assign(a, body);
+                addLog('INFO', 'api', `Account updated: ${a.channel_name}`);
+                return [200, a];
+            }
+            if (p.match(/\/api\/v1\/accounts\/[^/]+$/) && method === 'DELETE') {
+                const id = p.split('/').pop();
+                DB.accounts = DB.accounts.filter(a => a.id !== id);
+                addLog('INFO', 'api', `Account deleted: ${id}`);
+                return [204, null];
+            }
+
+            // API Vault
+            if (p === '/api/v1/api-vault' && method === 'GET')
+                return [200, qs.get('service_name') ? DB.keys.filter(k => k.service_name === qs.get('service_name')) : DB.keys];
+            if (p === '/api/v1/api-vault/stats/summary' && method === 'GET')
+                return [200, { total: DB.keys.length, active: DB.keys.filter(k => !k.is_locked).length, locked: DB.keys.filter(k => k.is_locked).length }];
+            if (p === '/api/v1/api-vault/upload-json' && method === 'POST') {
+                const n = Math.floor(Math.random() * 3) + 2;
+                for (let i = 0; i < n; i++) {
+                    DB.keys.push({ id: uid(), service_name: 'google', project_name: `demo-proj-${Date.now()}-${i}`, daily_usage: 0, daily_limit: 10000, is_locked: false, unlock_time: null, created_at: now() });
+                }
+                addLog('SUCCESS', 'api_vault', `Uploaded ${n} new API credential files`);
+                return [201, { added: n, skipped: 0, errors: [], message: `Successfully added ${n} API key(s). Skipped 0 duplicates.` }];
+            }
+            if (p.match(/\/api\/v1\/api-vault\/[^/]+\/unlock$/) && method === 'POST') {
+                const id = p.split('/').slice(-2)[0];
+                const k = DB.keys.find(k => k.id === id);
+                if (!k) return [404, { detail: 'Not found' }];
+                k.is_locked = false; k.unlock_time = null; k.lock_reason = null; k.daily_usage = 0;
+                addLog('INFO', 'api_rotation', `Key manually unlocked: ${k.project_name}`);
+                return [200, k];
+            }
+            if (p.match(/\/api\/v1\/api-vault\/[^/]+$/) && method === 'DELETE') {
+                const id = p.split('/').pop();
+                const k = DB.keys.find(k => k.id === id);
+                const name = k ? k.project_name : id;
+                DB.keys = DB.keys.filter(k => k.id !== id);
+                addLog('INFO', 'api_vault', `API key deleted: ${name}`);
+                return [204, null];
+            }
+
+            // Videos
+            if (p === '/api/v1/videos' && method === 'GET')
+                return [200, qs.get('status_filter') ? DB.videos.filter(v => v.status === qs.get('status_filter')) : DB.videos];
+            if (p === '/api/v1/videos/sync-drive' && method === 'POST') {
+                const taskId = 'task_' + uid();
+                for (let i = 0; i < 3; i++) {
+                    const fid = '1' + uid().slice(0, 15);
+                    DB.videos.push({ id: uid(), drive_file_id: fid, original_filename: `synced_video_${Date.now()}_${i + 1}.mp4`, file_size_bytes: Math.floor(Math.random() * 400 + 50) * 1e6, ai_title: null, status: 'synced', created_at: now() });
+                }
+                addLog('SUCCESS', 'drive_downloader', '3 new videos synced from Google Drive');
+                return [202, { task_id: taskId, message: 'Drive sync started. 3 new videos found.' }];
+            }
+            if (p.match(/\/api\/v1\/videos\/task-status\/[^/]+$/) && method === 'GET')
+                return [200, { task_id: p.split('/').pop(), status: 'SUCCESS', result: { synced: 3, total: 3 } }];
+            if (p.match(/\/api\/v1\/videos\/[^/]+$/) && method === 'DELETE') {
+                const id = p.split('/').pop();
+                DB.videos = DB.videos.filter(v => v.id !== id);
+                return [204, null];
+            }
+
+            // Schedules
+            if (p === '/api/v1/schedules' && method === 'GET') {
+                const ip = qs.get('is_published');
+                const result = ip !== null ? DB.schedules.filter(s => String(s.is_published) === ip) : DB.schedules;
+                return [200, result];
+            }
+            if (p === '/api/v1/schedules' && method === 'POST') {
+                const s = { id: uid(), ...body, is_published: false, published_at: null, published_url: null, retry_count: 0, created_at: now() };
+                DB.schedules.push(s);
+                addLog('INFO', 'beat_scheduler', `Schedule created → ${s.scheduled_time}`);
+                return [201, s];
+            }
+            if (p === '/api/v1/schedules/auto-drip' && method === 'POST') {
+                const { video_ids = [], total_days = 7, start_datetime, add_watermark = true, auto_comment = false, target_group_id = null } = body || {};
+                const start = new Date(start_datetime || Date.now());
+                const interval = (total_days * 86400) / Math.max(video_ids.length, 1);
+                video_ids.forEach((vid, i) => {
+                    const t = new Date(start.getTime() + interval * 1000 * i);
+                    DB.schedules.push({ id: uid(), video_id: vid, target_group_id, account_id: null, scheduled_time: t.toISOString(), is_published: false, published_at: null, published_url: null, add_watermark, auto_comment, retry_count: 0, created_at: now() });
+                });
+                const interval_hours = Math.round(interval / 3600 * 10) / 10;
+                addLog('SUCCESS', 'beat_scheduler', `Auto-drip: scheduled ${video_ids.length} videos over ${total_days} days (every ${interval_hours}h)`);
+                return [201, { created: video_ids.length, total_days, interval_hours, message: `Scheduled ${video_ids.length} videos across ${total_days} days.` }];
+            }
+            if (p.match(/\/api\/v1\/schedules\/[^/]+\/trigger$/) && method === 'POST') {
+                const sid = p.split('/').slice(-2)[0];
+                const taskId = 'pipeline_' + uid();
+                const s = DB.schedules.find(s => s.id === sid);
+                if (s) s.celery_task_id = taskId;
+                addLog('INFO', 'celery_worker', `[Pipeline] Triggered manually: task ${taskId}`);
+                addLog('INFO', 'ffmpeg_engine', 'FFmpeg uniquifier running (crop, brightness, watermark)...');
+                addLog('SUCCESS', 'gemini_ai', 'AI metadata generated successfully');
+                return [200, { task_id: taskId, message: 'Pipeline task dispatched' }];
+            }
+            if (p.match(/\/api\/v1\/schedules\/[^/]+$/) && method === 'DELETE') {
+                const id = p.split('/').pop();
+                DB.schedules = DB.schedules.filter(s => s.id !== id);
+                return [204, null];
+            }
+
+            // Logs
+            if (p === '/api/v1/logs' && method === 'GET') {
+                const limit = parseInt(qs.get('limit') || '100');
+                const lvl = qs.get('level');
+                let logs = DB.logs;
+                if (lvl) logs = logs.filter(l => l.level === lvl.toUpperCase());
+                return [200, logs.slice(-limit)];
+            }
+
+            return [404, { detail: `Endpoint not found: ${method} ${p}` }];
+        }
+
+        const SSE_LOGS = [
+            { level: 'INFO', source: 'beat_scheduler', message: 'Checking pending schedules...' },
+            { level: 'INFO', source: 'celery_worker', message: '[Pipeline] Starting: viral_gaming_clip_001.mp4' },
+            { level: 'INFO', source: 'drive_downloader', message: 'Downloading from Drive — 142.5 MB' },
+            { level: 'SUCCESS', source: 'drive_downloader', message: 'Download complete: /tmp/videos/viral_gaming_clip_001.mp4' },
+            { level: 'INFO', source: 'ffmpeg_engine', message: 'Running FFmpeg: crop, brightness+0.01, watermark overlay' },
+            { level: 'SUCCESS', source: 'ffmpeg_engine', message: 'FFmpeg complete → processed_viral_gaming_clip_001.mp4' },
+            { level: 'INFO', source: 'gemini_ai', message: 'Extracting 3 frames for Gemini 1.5 Flash...' },
+            { level: 'SUCCESS', source: 'gemini_ai', message: 'AI title: "You Won\'t BELIEVE This!! 🤯"' },
+            { level: 'INFO', source: 'youtube_uploader', message: 'Uploading to YouTube (45%)...' },
+            { level: 'SUCCESS', source: 'youtube_uploader', message: 'Upload complete → youtube.com/watch?v=dQw4w9WgXcQ' },
+            { level: 'INFO', source: 'telegram_bot', message: 'Alert sent: ✅ Upload Successful' },
+            { level: 'WARNING', source: 'api_rotation', message: 'Key near quota limit (8900/10000)' },
+            { level: 'ERROR', source: 'api_rotation', message: '403 Quota Exceeded → Locking key for 24h' },
+        ];
+
+        function addLog(level, source, message) {
+            DB.logs.push({ id: uid(), level, source, message, created_at: now() });
+            if (DB.logs.length > 500) DB.logs = DB.logs.slice(-500);
+        }
+
+        // ── UI Logic ──────────────────────────────────────────────────────────────
+        function use(el, method, url, body) {
+            document.querySelectorAll('.ep').forEach(e => e.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('method').value = method;
+            document.getElementById('url').value = url;
+            document.getElementById('body').value = body || '';
+            document.getElementById('ep-label').textContent = `${method} ${url}`;
+            document.getElementById('resp').textContent = 'Click ▶ Send Request to run this endpoint...';
+            document.getElementById('badge').textContent = '';
+            document.getElementById('badge').className = 'stt';
+            if (sseTimer) { clearInterval(sseTimer); sseTimer = null; }
+        }
+
+        function send() {
+            const method = document.getElementById('method').value;
+            const url = document.getElementById('url').value;
+            const rawBody = document.getElementById('body').value.trim();
+            let body = null;
+            if (rawBody && rawBody !== '(multipart upload)' && method !== 'GET') {
+                try { body = JSON.parse(rawBody); } catch (e) { show(400, { detail: 'Invalid JSON in body: ' + e.message }); return; }
+            }
+            const t0 = Date.now();
+            const [status, data] = mockAPI(method, url, body);
+            const ms = Date.now() - t0;
+            show(status, data, ms);
+            document.getElementById('ep-label').textContent = `${method} ${url}`;
+        }
+
+        function show(status, data, ms = 0) {
+            const badge = document.getElementById('badge');
+            const resp = document.getElementById('resp');
+            badge.textContent = status + (ms ? ` (${ms}ms)` : '') + ' ' + (status >= 200 && status < 300 ? '✓' : '✗');
+            badge.className = 'stt ' + (status >= 200 && status < 300 ? 's2' : 's4');
+            if (data === null) { resp.textContent = '(No Content — 204)'; resp.className = 'resp ok'; }
+            else { resp.textContent = JSON.stringify(data, null, 2); resp.className = 'resp ' + (status < 300 ? 'ok' : 'err'); }
+        }
+
+        let sseTimer = null, sseIdx = 0;
+        function testSSE(el) {
+            document.querySelectorAll('.ep').forEach(e => e.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById('method').value = 'GET';
+            document.getElementById('url').value = '/api/v1/logs/stream';
+            document.getElementById('ep-label').textContent = 'GET /api/v1/logs/stream (SSE Live)';
+            const resp = document.getElementById('resp');
+            const badge = document.getElementById('badge');
+            resp.textContent = '🔴 SSE Stream started — new log every 2s...\n\n';
+            resp.className = 'resp ok';
+            badge.textContent = '200 SSE ●'; badge.className = 'stt s2';
+            if (sseTimer) clearInterval(sseTimer);
+            sseIdx = 0;
+            sseTimer = setInterval(() => {
+                const l = SSE_LOGS[sseIdx % SSE_LOGS.length];
+                addLog(l.level, l.source, l.message);
+                const t = new Date().toLocaleTimeString();
+                resp.textContent += `[${t}] [${l.level}] ${l.source}: ${l.message}\n`;
+                resp.scrollTop = resp.scrollHeight;
+                sseIdx++;
+            }, 2000);
+        }
+
+        // Auto-run first endpoint on load
+        window.onload = () => send();
+    </script>
+</body>
+
+</html>

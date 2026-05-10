@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+
+node_modules/
+dist/
+.vite/
+
+postgres_data/
+*.log
+
+# Local diagnostics / outputs (keep out of git)
+*_out*.txt
+*_vers.txt
+out*.txt
+docker_install_out.txt
+gemini_out*.txt
