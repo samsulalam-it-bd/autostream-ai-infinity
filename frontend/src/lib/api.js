@@ -45,8 +45,9 @@ export const updateWorkspaceSettings = (accountId, settings) => api.patch(`/work
 export const fetchWorkspaceSummary = (accountId) => api.get(`/workspace/${accountId}/summary`)
 
 // ── Videos & Drive ─────────────────────────────────────────────────────────
-export const fetchVideos = (status) => api.get('/videos/', { params: { status_filter: status } })
-export const syncAccountNow = (accountId) => api.post('/videos/sync-drive', { account_id: accountId })
+export const fetchVideos = (status, unassigned) => api.get('/videos/', { params: { status_filter: status, unassigned_only: unassigned } })
+export const syncAccountNow = (accountId, folderLink) => api.post('/videos/sync-drive', { account_id: accountId, folder_link: folderLink || undefined })
+export const pollTaskStatus = (taskId) => api.get(`/videos/task-status/${taskId}`)
 export const deleteVideo = (id) => api.delete(`/videos/${id}`)
 
 // ── Schedules & Automation ───────────────────────────────────────────────

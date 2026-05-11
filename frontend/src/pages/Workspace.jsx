@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { 
-    fetchAccounts, updateWorkspaceSettings, syncAccountNow, 
-    fetchVideos, createAutoDrip 
+import {
+    fetchAccounts, updateWorkspaceSettings, syncAccountNow, pollTaskStatus,
+    fetchVideos, createAutoDrip
 } from '../lib/api'
-import { 
-    ChevronDown, Folder, HardDrive, RefreshCw, CheckCircle2, 
+import {
+    ChevronDown, Folder, HardDrive, RefreshCw, CheckCircle2,
     AlertCircle, FileVideo, Wand2, ArrowRight, Play, Check, ChevronLeft, ChevronRight,
     Settings2, Calendar, Layout, Trash2, Plus, X
 } from 'lucide-react'
@@ -17,18 +17,22 @@ export default function WorkspaceWizard() {
     const navigate = useNavigate()
     const { id: editId } = useParams()
     const [step, setStep] = useState(1)
+    const [activeOverlay, setActiveOverlay] = useState(null)
+    const [showAddModal, setShowAddModal] = useState(false)
+    const [syncingAll, setSyncingAll] = useState(false)
+    const [positioningMode, setPositioningMode] = useState('logo') // 'logo' or 'text'
     const [accounts, setAccounts] = useState([])
     const [selectedAccounts, setSelectedAccounts] = useState([])
     const [driveUrl, setDriveUrl] = useState('')
     const [isSyncing, setIsSyncing] = useState(false)
     const [syncProgress, setSyncProgress] = useState(0)
     const [foundVideos, setFoundVideos] = useState([])
-    
+
     // Form State
     const [formData, setFormData] = useState({
         title_mode: 'ai_auto',
         desc_template: 'Check out our latest content! 🔥 Subscribe for more amazing videos every day!\n\n#autostream #viral #subscribe',
-        tags: '#autostream #viral #trending #youtube #2024',
+        tags: '#autostream #viral #trending #youtube #2026',
         format: '9:16',
         watermark_pos: 'BR',
         overlay_text: '',
@@ -47,7 +51,7 @@ export default function WorkspaceWizard() {
         const load = async () => {
             const res = await fetchAccounts()
             setAccounts(res.data)
-            
+
             if (editId) {
                 setSelectedAccounts([editId])
                 const target = res.data.find(a => a.id === editId)
@@ -63,7 +67,7 @@ export default function WorkspaceWizard() {
     }, [editId])
 
     const toggleAccount = (id) => {
-        setSelectedAccounts(prev => 
+        setSelectedAccounts(prev =>
             prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
         )
     }
@@ -72,19 +76,49 @@ export default function WorkspaceWizard() {
         if (!driveUrl || selectedAccounts.length === 0) return
         setIsSyncing(true)
         setSyncProgress(10)
-        
+
         try {
-            // Trigger sync for the first selected account as a reference
-            const res = await syncAccountNow(selectedAccounts[0])
-            // Wait a few seconds to simulate/wait for background task
-            setTimeout(async () => {
-                setSyncProgress(100)
+            // Trigger sync with the folder link
+            const res = await syncAccountNow(selectedAccounts[0], driveUrl)
+            const taskId = res.data.task_id
+
+            if (!taskId) {
+                // Fallback if no task ID (e.g. error)
                 setIsSyncing(false)
-                // Fetch videos assigned to this account now
-                const vRes = await fetchVideos(null, true)
-                setFoundVideos(vRes.data.slice(0, 18)) // Just a preview
-            }, 2000)
-        } catch (e) { 
+                return
+            }
+
+            // Polling for task status
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await pollTaskStatus(taskId)
+                    const { status } = statusRes.data
+
+                    if (status === 'SUCCESS') {
+                        clearInterval(pollInterval)
+                        setSyncProgress(100)
+                        
+                        // Small delay for smooth transition
+                        setTimeout(async () => {
+                            setIsSyncing(false)
+                            const vRes = await fetchVideos(null, true)
+                            setFoundVideos(vRes.data.slice(0, 18))
+                        }, 500)
+                    } else if (status === 'FAILURE' || status === 'REVOKED') {
+                        clearInterval(pollInterval)
+                        setIsSyncing(false)
+                        alert("Sync Failed. Please check logs.")
+                    } else {
+                        // Increment progress slightly while waiting
+                        setSyncProgress(prev => prev < 90 ? prev + 10 : prev)
+                    }
+                } catch (e) {
+                    clearInterval(pollInterval)
+                    setIsSyncing(false)
+                }
+            }, 1500)
+
+        } catch (e) {
             console.error(e)
             setIsSyncing(false)
         }
@@ -93,13 +127,13 @@ export default function WorkspaceWizard() {
     const handleLaunch = async () => {
         try {
             // 1. Update settings for all targets
-            await Promise.all(selectedAccounts.map(id => 
+            await Promise.all(selectedAccounts.map(id =>
                 updateWorkspaceSettings(id, {
                     ...formData,
                     drive_folder_link: driveUrl
                 })
             ))
-            
+
             // 2. Trigger Auto-Drip scheduling
             await createAutoDrip({
                 targets: selectedAccounts,
@@ -119,7 +153,7 @@ export default function WorkspaceWizard() {
             })
 
             navigate('/autopublish')
-        } catch (e) { 
+        } catch (e) {
             console.error(e)
             alert('Failed to launch pipeline. Check console for details.')
         }
@@ -148,8 +182,8 @@ export default function WorkspaceWizard() {
                             <div className={clsx(
                                 "ws-n w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all border-2",
                                 isDone ? "bg-gradient-to-r from-[#6c5ce7] to-[#e84393] border-transparent text-white" :
-                                isCurrent ? "border-[#6c5ce7] text-white shadow-[0_0_15px_rgba(108,92,231,0.3)] bg-[#0d1120]" :
-                                "border-white/5 text-[#3d4666] bg-[#0d1120]"
+                                    isCurrent ? "border-[#6c5ce7] text-white shadow-[0_0_15px_rgba(108,92,231,0.3)] bg-[#0d1120]" :
+                                        "border-white/5 text-[#3d4666] bg-[#0d1120]"
                             )}>
                                 {isDone ? <Check size={18} /> : n}
                             </div>
@@ -175,7 +209,7 @@ export default function WorkspaceWizard() {
                         </div>
                         <div className="space-y-3">
                             {accounts.map(acc => (
-                                <div 
+                                <div
                                     key={acc.id}
                                     onClick={() => toggleAccount(acc.id)}
                                     className={clsx(
@@ -214,8 +248,8 @@ export default function WorkspaceWizard() {
                             </div>
                             <div className="max-w-md mx-auto space-y-4">
                                 <div className="font-bold text-white">Paste Drive Folder Link</div>
-                                <input 
-                                    className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-center text-sm outline-none focus:border-[#6c5ce7]" 
+                                <input
+                                    className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-center text-sm outline-none focus:border-[#6c5ce7]"
                                     placeholder="https://drive.google.com/drive/folders/..."
                                     value={driveUrl}
                                     onChange={(e) => setDriveUrl(e.target.value)}
@@ -259,12 +293,33 @@ export default function WorkspaceWizard() {
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                             {/* Left: Metadata & Branding */}
                             <div className="lg:col-span-7 space-y-8">
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Description Template</label>
+                                        <textarea 
+                                            className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] h-28 resize-none text-[#7a85b0] leading-relaxed"
+                                            value={formData.desc_template}
+                                            onChange={(e) => setFormData({...formData, desc_template: e.target.value})}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Default Tags</label>
+                                        <input 
+                                            type="text"
+                                            placeholder="#autostream #viral"
+                                            className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
+                                            value={formData.tags}
+                                            onChange={(e) => setFormData({...formData, tags: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Title Mode</label>
-                                        <select 
+                                        <select
                                             value={formData.title_mode}
-                                            onChange={(e) => setFormData({...formData, title_mode: e.target.value})}
+                                            onChange={(e) => setFormData({ ...formData, title_mode: e.target.value })}
                                             className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
                                         >
                                             <option value="ai_auto">🤖 AI Auto Generate</option>
@@ -273,9 +328,9 @@ export default function WorkspaceWizard() {
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Output Size</label>
-                                        <select 
+                                        <select
                                             value={formData.format}
-                                            onChange={(e) => setFormData({...formData, format: e.target.value})}
+                                            onChange={(e) => setFormData({ ...formData, format: e.target.value })}
                                             className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
                                         >
                                             <option value="9:16">📱 Vertical (Reel/Short) 9:16</option>
@@ -290,18 +345,18 @@ export default function WorkspaceWizard() {
                                     <div className="space-y-2">
                                         <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Video Text Overlay</label>
                                         <div className="flex gap-2">
-                                            <input 
+                                            <input
                                                 type="text"
                                                 placeholder="Add text to video... (e.g. Subscribe Now!)"
                                                 className="flex-1 bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
                                                 value={formData.overlay_text}
-                                                onChange={(e) => setFormData({...formData, overlay_text: e.target.value})}
+                                                onChange={(e) => setFormData({ ...formData, overlay_text: e.target.value })}
                                             />
-                                            <input 
+                                            <input
                                                 type="color"
                                                 className="w-12 h-12 rounded-xl bg-white/5 border border-white/5 p-1 cursor-pointer"
                                                 value={formData.text_color}
-                                                onChange={(e) => setFormData({...formData, text_color: e.target.value})}
+                                                onChange={(e) => setFormData({ ...formData, text_color: e.target.value })}
                                             />
                                         </div>
                                     </div>
@@ -311,29 +366,29 @@ export default function WorkspaceWizard() {
                                             <div className="text-[12px] font-bold text-white flex items-center gap-2">
                                                 <Layout size={16} className="text-[#6c5ce7]" /> Logo & Text Position
                                             </div>
-                                            <button 
+                                            <button
                                                 className="text-[10px] text-[#6c5ce7] font-bold hover:underline"
                                                 onClick={() => document.getElementById('logo-up').click()}
                                             >
-                                                UPLOAD LOGO
+                                                UPLOAD OVERLAY (ANY FILE)
                                             </button>
-                                            <input 
-                                                type="file" id="logo-up" className="hidden" accept="image/*"
+                                            <input
+                                                type="file" id="logo-up" className="hidden" accept="image/*,video/*,.gif,.webp"
                                                 onChange={(e) => {
                                                     const file = e.target.files[0]
-                                                    if (file) setFormData({...formData, logo_url: URL.createObjectURL(file)})
+                                                    if (file) setFormData({ ...formData, logo_url: URL.createObjectURL(file) })
                                                 }}
                                             />
                                         </div>
-                                        
+
                                         <div className="grid grid-cols-2 gap-6">
                                             <div>
                                                 <label className="text-[9px] text-[#3d4666] font-bold uppercase mb-2 block">Logo Position</label>
                                                 <div className="grid grid-cols-3 gap-1">
                                                     {['TL', 'TC', 'TR', 'ML', 'C', 'MR', 'BL', 'BC', 'BR'].map(p => (
-                                                        <button 
-                                                            key={p} 
-                                                            onClick={() => setFormData({...formData, watermark_pos: p})}
+                                                        <button
+                                                            key={p}
+                                                            onClick={() => setFormData({ ...formData, watermark_pos: p })}
                                                             className={clsx(
                                                                 "p-2 text-center text-[9px] font-black rounded-lg border transition-all",
                                                                 formData.watermark_pos === p ? "border-[#6c5ce7] bg-[#6c5ce715] text-[#6c5ce7]" : "border-white/5 bg-[#131829] text-[#3d4666]"
@@ -348,9 +403,9 @@ export default function WorkspaceWizard() {
                                                 <label className="text-[9px] text-[#3d4666] font-bold uppercase mb-2 block">Text Position</label>
                                                 <div className="grid grid-cols-3 gap-1">
                                                     {['TL', 'TC', 'TR', 'ML', 'C', 'MR', 'BL', 'BC', 'BR'].map(p => (
-                                                        <button 
-                                                            key={p} 
-                                                            onClick={() => setFormData({...formData, text_pos: p})}
+                                                        <button
+                                                            key={p}
+                                                            onClick={() => setFormData({ ...formData, text_pos: p })}
                                                             className={clsx(
                                                                 "p-2 text-center text-[9px] font-black rounded-lg border transition-all",
                                                                 formData.text_pos === p ? "border-[#00b894] bg-[#00b89415] text-[#00b894]" : "border-white/5 bg-[#131829] text-[#3d4666]"
@@ -366,33 +421,52 @@ export default function WorkspaceWizard() {
                                 </div>
                             </div>
 
-                            {/* Right: Dynamic Real-time Preview */}
                             <div className="lg:col-span-5 space-y-6">
-                                <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Live Frame Preview</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Live Frame Preview</label>
+                                    <div className="flex items-center gap-1 bg-[#131829] p-1 rounded-lg border border-white/5">
+                                        <button
+                                            onClick={() => setPositioningMode('logo')}
+                                            className={clsx("px-3 py-1 text-[9px] font-bold uppercase rounded-md transition-all", positioningMode === 'logo' ? "bg-[#6c5ce7] text-white" : "text-[#7a85b0] hover:text-white")}
+                                        >
+                                            Set Logo
+                                        </button>
+                                        <button
+                                            onClick={() => setPositioningMode('text')}
+                                            className={clsx("px-3 py-1 text-[9px] font-bold uppercase rounded-md transition-all", positioningMode === 'text' ? "bg-[#00b894] text-white" : "text-[#7a85b0] hover:text-white")}
+                                        >
+                                            Set Text
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div className="flex items-center justify-center min-h-[450px] bg-black/20 rounded-[40px] border border-white/5 p-4">
-                                    <div 
+                                    <div
                                         className="relative bg-[#131829] rounded-2xl shadow-2xl overflow-hidden group cursor-crosshair border border-white/10"
-                                        style={{ 
+                                        style={{
                                             aspectRatio: formData.format.replace(':', '/'),
                                             width: formData.format === '9:16' ? '250px' : '100%',
                                             maxWidth: '400px'
                                         }}
                                         onClick={(e) => {
-                                            // Optional: advanced quadrant detection
                                             const rect = e.currentTarget.getBoundingClientRect()
                                             const x = (e.clientX - rect.left) / rect.width
                                             const y = (e.clientY - rect.top) / rect.height
-                                            
+
                                             let h = 'C', v = 'M'
                                             if (x < 0.33) h = 'L'; else if (x > 0.66) h = 'R'; else h = 'C'
                                             if (y < 0.33) v = 'T'; else if (y > 0.66) v = 'B'; else v = 'M'
-                                            
+
                                             const pos = v === 'M' && h === 'C' ? 'C' : v + h
-                                            setFormData({...formData, watermark_pos: pos})
+                                            if (positioningMode === 'logo') {
+                                                setFormData({ ...formData, watermark_pos: pos })
+                                            } else {
+                                                setFormData({ ...formData, text_pos: pos })
+                                            }
                                         }}
                                     >
                                         <div className="absolute inset-0 bg-gradient-to-br from-[#131829] to-[#1e273e]" />
-                                        
+
                                         {/* Logo Rendering */}
                                         <div className={clsx(
                                             "absolute p-4 transition-all duration-300",
@@ -407,16 +481,20 @@ export default function WorkspaceWizard() {
                                             formData.watermark_pos === 'BR' && "bottom-0 right-0"
                                         )}>
                                             {formData.logo_url ? (
-                                                <img src={formData.logo_url} className="w-12 h-12 object-contain rounded-lg shadow-xl" alt="Logo" />
+                                                formData.logo_url.match(/\.(mp4|webm|ogg)$/i) || document.getElementById('logo-up')?.files[0]?.type.startsWith('video') ? (
+                                                    <video src={formData.logo_url} className="w-16 h-16 object-cover rounded-lg shadow-xl border border-[#6c5ce750]" autoPlay loop muted />
+                                                ) : (
+                                                    <img src={formData.logo_url} className="w-16 h-16 object-contain rounded-lg shadow-xl" alt="Logo" />
+                                                )
                                             ) : (
-                                                <div className="w-12 h-12 bg-[#6c5ce740] backdrop-blur-md border border-[#6c5ce740] rounded-lg flex items-center justify-center text-[8px] font-black text-white">LOGO</div>
+                                                <div className="w-16 h-16 bg-[#6c5ce740] backdrop-blur-md border border-[#6c5ce740] rounded-lg flex items-center justify-center text-[10px] font-black text-white">LOGO</div>
                                             )}
                                         </div>
 
                                         {/* Text Overlay Rendering */}
                                         {formData.overlay_text && (
                                             <div className={clsx(
-                                                "absolute p-6 transition-all duration-300 whitespace-nowrap",
+                                                "absolute p-6 transition-all duration-300 whitespace-nowrap z-10",
                                                 formData.text_pos === 'TL' && "top-0 left-0",
                                                 formData.text_pos === 'TC' && "top-0 left-1/2 -translate-x-1/2",
                                                 formData.text_pos === 'TR' && "top-0 right-0",
@@ -427,8 +505,8 @@ export default function WorkspaceWizard() {
                                                 formData.text_pos === 'BC' && "bottom-0 left-1/2 -translate-x-1/2",
                                                 formData.text_pos === 'BR' && "bottom-0 right-0"
                                             )}>
-                                                <span 
-                                                    className="px-3 py-1 rounded-lg bg-black/40 backdrop-blur-sm font-bold text-[14px] shadow-lg border border-white/5"
+                                                <span
+                                                    className="px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm font-bold text-[14px] shadow-lg border border-white/10"
                                                     style={{ color: formData.text_color }}
                                                 >
                                                     {formData.overlay_text}
@@ -443,7 +521,7 @@ export default function WorkspaceWizard() {
                                 </div>
                                 <div className="text-center">
                                     <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-1">Interactive Preview</div>
-                                    <div className="text-[9px] text-[#3d4666]">CLICK ON FRAME TO POSITION LOGO</div>
+                                    <div className="text-[9px] text-[#3d4666]">CLICK ON FRAME TO POSITION LOGO OR TEXT</div>
                                 </div>
                             </div>
                         </div>
@@ -469,9 +547,9 @@ export default function WorkspaceWizard() {
                                     <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Publishing Days</label>
                                     <div className="flex flex-wrap gap-2">
                                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-                                            <div 
+                                            <div
                                                 key={d}
-                                                onClick={() => setFormData({...formData, days: formData.days.includes(d) ? formData.days.filter(x => x !== d) : [...formData.days, d]})}
+                                                onClick={() => setFormData({ ...formData, days: formData.days.includes(d) ? formData.days.filter(x => x !== d) : [...formData.days, d] })}
                                                 className={clsx(
                                                     "px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all",
                                                     formData.days.includes(d) ? "bg-[#6c5ce715] border-[#6c5ce7] text-white" : "bg-[#131829] border-white/5 text-[#3d4666]"
@@ -502,7 +580,7 @@ export default function WorkspaceWizard() {
                                         {formData.slots.map((t, i) => (
                                             <div key={i} className="flex items-center gap-2 bg-[#131829] border border-white/5 px-3 py-1.5 rounded-full text-xs font-bold text-white group">
                                                 {t}
-                                                <X size={12} className="text-[#3d4666] cursor-pointer hover:text-white" onClick={() => setFormData({...formData, slots: formData.slots.filter(x => x !== t)})} />
+                                                <X size={12} className="text-[#3d4666] cursor-pointer hover:text-white" onClick={() => setFormData({ ...formData, slots: formData.slots.filter(x => x !== t) })} />
                                             </div>
                                         ))}
                                     </div>
@@ -510,7 +588,7 @@ export default function WorkspaceWizard() {
                                         <input type="time" id="new-slot" className="flex-1 bg-[#131829] border border-white/10 rounded-xl px-4 py-2 text-sm outline-none" />
                                         <button className="btn btn-g px-4 py-2" onClick={() => {
                                             const val = document.getElementById('new-slot').value
-                                            if(val) setFormData({...formData, slots: [...formData.slots, val].sort()})
+                                            if (val) setFormData({ ...formData, slots: [...formData.slots, val].sort() })
                                         }}><Plus size={18} /></button>
                                     </div>
                                 </div>
@@ -549,7 +627,7 @@ export default function WorkspaceWizard() {
                                         { l: 'Videos Found', v: foundVideos.length || '0' },
                                         { l: 'Daily Slots', v: `${formData.slots.length} per day` },
                                         { l: 'Timezone', v: formData.timezone },
-                                        { l: 'Est. Duration', v: `${Math.ceil((foundVideos.length || 1)/formData.slots.length)} days` }
+                                        { l: 'Est. Duration', v: `${Math.ceil((foundVideos.length || 1) / formData.slots.length)} days` }
                                     ].map(item => (
                                         <div key={item.l} className="flex justify-between items-center text-[13px]">
                                             <span className="text-[#7a85b0]">{item.l}</span>
@@ -571,14 +649,14 @@ export default function WorkspaceWizard() {
 
             {/* ── Nav ────────────────────────────────────────────── */}
             <div className="flex justify-between items-center pt-4">
-                <button 
+                <button
                     onClick={() => setStep(s => Math.max(1, s - 1))}
                     disabled={step === 1}
                     className={clsx("btn btn-o", step === 1 && "opacity-0")}
                 >
                     <ChevronLeft size={18} /> Back
                 </button>
-                <button 
+                <button
                     onClick={() => step === 5 ? handleLaunch() : setStep(s => s + 1)}
                     className={clsx("btn", step === 5 ? "btn-g3" : "btn-g")}
                 >
