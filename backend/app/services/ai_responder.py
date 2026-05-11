@@ -4,18 +4,38 @@ import asyncio
 from typing import Optional
 from google import genai
 from app.core.config import settings
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.api_rotation import get_active_api_key, increment_usage
 
 logger = logging.getLogger(__name__)
 
 def _gemini_generate_sync(api_key: str, model: str, contents: str):
-    with genai.Client(api_key=api_key) as client:
-        return client.models.generate_content(model=model, contents=contents)
+    client = genai.Client(api_key=api_key)
+    return client.models.generate_content(model=model, contents=contents)
 
-async def generate_comment_reply(comment_text: str, persona: str, provider: str = "gemini", api_key: Optional[str] = None) -> Optional[str]:
+async def generate_comment_reply(
+    comment_text: str, 
+    persona: str, 
+    provider: str = "gemini", 
+    api_key: Optional[str] = None,
+    db: Optional[AsyncSession] = None
+) -> Optional[str]:
     """Use AI to generate a contextual, human-like response to a user comment."""
     
     if provider == "gemini":
-        key = api_key or settings.GEMINI_API_KEY
+        key = api_key
+        vault_key = None
+        
+        # 1. Try Vault first if DB session provided
+        if not key and db:
+            vault_key = await get_active_api_key("gemini", db)
+            if vault_key:
+                key = vault_key.credentials_json.get("api_key")
+        
+        # 2. Fallback to .env
+        if not key:
+            key = settings.GEMINI_API_KEY
+            
         if not key:
             logger.warning("No Gemini API key configured for auto-reply.")
             return None
@@ -34,6 +54,11 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
         try:
             response = await asyncio.to_thread(_gemini_generate_sync, key, model_name, prompt)
             reply = (getattr(response, "text", "") or "").strip()
+            
+            # 3. Increment usage if vault key was used
+            if vault_key and db:
+                await increment_usage(vault_key.id, db)
+                
             logger.info(f"Generated Gemini Reply: {reply}")
             return reply
         except Exception as e:
@@ -43,12 +68,16 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
     elif provider in ["grok", "openai"]:
         base_url = "https://api.x.ai/v1/chat/completions" if provider == "grok" else "https://api.openai.com/v1/chat/completions"
         model_name = "grok-2-latest" if provider == "grok" else "gpt-4o-mini"
-        if not api_key:
+        
+        # For simplicity, these currently don't use vault unless added later
+        key = api_key or (settings.GROK_API_KEY if provider == "grok" else settings.OPENAI_API_KEY)
+        
+        if not key:
             logger.warning(f"No {provider} API key configured.")
             return None
         
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json"
         }
         payload = {
@@ -70,11 +99,12 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
             return None
 
     elif provider == "anthropic":
-        if not api_key:
+        key = api_key or settings.ANTHROPIC_API_KEY
+        if not key:
             logger.warning("No Anthropic API key configured.")
             return None
         headers = {
-            "x-api-key": api_key,
+            "x-api-key": key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json"
         }
@@ -121,11 +151,9 @@ async def post_reply_to_meta(comment_id: str, reply_text: str, page_token: str) 
 
 async def send_dm_to_meta_user(user_id: str, dm_text: str, page_token: str, page_id: str) -> bool:
     """Send a private message to a user who commented (Message Tags/Private Replies)."""
-    # Note: Private replies require specific Graph API endpoints. 
-    # Usually: POST /{page_id}/messages format with recipient id=comment_id but FB API changes often.
     url = f"https://graph.facebook.com/v19.0/{page_id}/messages"
     payload = {
-        "recipient": {"comment_id": user_id}, # using comment_id as recipient for private replies
+        "recipient": {"comment_id": user_id},
         "message": {"text": dm_text}
     }
     

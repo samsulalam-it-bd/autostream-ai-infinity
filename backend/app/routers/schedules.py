@@ -13,6 +13,50 @@ from app.schemas import ScheduleCreate, ScheduleOut, AutoDripRequest
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
 
+@router.post("/instant-post-next")
+async def instant_post_next(
+    req: dict = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Find the next pending schedule for an account and trigger it immediately.
+    Used by the 'Instant Post' button in the UI.
+    """
+    account_id = req.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id required")
+    
+    # 1. Find next pending
+    from sqlalchemy import select, and_
+    import uuid
+    from app.models.models import UploadSchedule
+    
+    result = await db.execute(
+        select(UploadSchedule)
+        .where(and_(
+            UploadSchedule.account_id == (uuid.UUID(account_id) if isinstance(account_id, str) else account_id),
+            UploadSchedule.is_published == False
+        ))
+        .order_by(UploadSchedule.scheduled_time.asc())
+        .limit(1)
+    )
+    schedule = result.scalar_one_or_none()
+    
+    if not schedule:
+        raise HTTPException(status_code=404, detail="No pending schedules found for this account")
+
+    # 2. Trigger it
+    from app.worker import process_and_upload_video
+    task = process_and_upload_video.apply_async(
+        args=[str(schedule.id)],
+        queue="video_pipeline",
+    )
+    schedule.celery_task_id = task.id
+    await db.commit()
+    
+    return {"status": "success", "task_id": task.id, "message": "Instant post triggered successfully"}
+
+
 @router.get("/", response_model=List[ScheduleOut])
 async def list_schedules(
     is_published: bool = None,
@@ -559,3 +603,5 @@ async def replace_schedule_video(
     await db.commit()
     await db.refresh(schedule)
     return schedule
+
+

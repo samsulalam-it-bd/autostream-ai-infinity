@@ -100,7 +100,6 @@ async def get_account_pipeline(account_id: uuid.UUID, limit: int = 50, db: Async
             "view_count": s.view_count,
             "status": "published" if s.is_published else ("failed" if s.error_message else "pending")
         })
-        })
     return pipeline
 
 @router.patch("/{account_id}/settings")

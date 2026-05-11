@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.database import init_db
-from app.routers import accounts, api_vault, videos, schedules, logs, dashboard, comments, workspace
+from app.routers import accounts, api_vault, videos, schedules, logs, dashboard, comments, workspace, engagement
 
 
 _telegram_token_in_url = re.compile(r"(https://api\.telegram\.org/bot)([^/\s]+)")
@@ -44,8 +44,23 @@ async def lifespan(app: FastAPI):
 
     # Start Telegram background polling
     from app.services.telegram import start_telegram_polling
+    from app.services.api_rotation import reset_daily_quotas
+    from app.database import AsyncSessionLocal
     import asyncio
+    
     asyncio.create_task(start_telegram_polling())
+    
+    # Daily Quota Reset Loop
+    async def quota_reset_worker():
+        while True:
+            try:
+                async with AsyncSessionLocal() as db:
+                    await reset_daily_quotas(db)
+            except Exception as e:
+                logger.error(f"Quota reset failed: {e}")
+            await asyncio.sleep(3600) # Check every hour
+
+    asyncio.create_task(quota_reset_worker())
     
     yield
     logger.info("Shutting down...")
@@ -63,8 +78,8 @@ app = FastAPI(
 # ── CORS ───────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -79,6 +94,7 @@ app.include_router(schedules.router, prefix=API_PREFIX)
 app.include_router(logs.router, prefix=API_PREFIX)
 app.include_router(comments.router, prefix=API_PREFIX)
 app.include_router(workspace.router, prefix=API_PREFIX)
+app.include_router(engagement.router, prefix=API_PREFIX)
 
 
 

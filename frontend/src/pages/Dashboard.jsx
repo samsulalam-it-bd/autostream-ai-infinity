@@ -9,26 +9,65 @@ import {
     ChevronRight, Eye, Heart, MessageSquare
 } from 'lucide-react'
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
+import clsx from 'clsx'
 
 export default function Dashboard() {
-    const [stats, setStats] = useState(null)
+    const [stats, setStats] = useState({
+        total_uploads_today: 0,
+        active_api_keys: 0,
+        pending_schedules: 0,
+        total_accounts: 0,
+        active_platforms: [],
+        daily_trend: '0',
+        api_breakdown: {},
+        account_breakdown: {},
+        recent_alerts: []
+    })
     const [chartData, setChartData] = useState([])
     const [history, setHistory] = useState([])
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
 
     const loadData = async () => {
         try {
+            setError(null)
             const [s, c, hist] = await Promise.all([
                 fetchStats(), fetchUploadChart(), fetchPublishedHistory(5)
             ])
-            setStats(s.data)
-            setChartData(c.data)
-            setHistory(hist.data)
-        } catch (e) { console.error(e) }
+            if (s.data) setStats(s.data)
+            if (c.data) setChartData(c.data)
+            if (hist.data) setHistory(hist.data)
+        } catch (e) { 
+            console.error(e)
+            setError("Failed to sync dashboard data. Check backend connection.")
+        }
         finally { setLoading(false) }
     }
 
     useEffect(() => { loadData() }, [])
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-[60vh]">
+                <div className="flex flex-col items-center gap-4">
+                    <RefreshCw className="w-10 h-10 text-[#6c5ce7] animate-spin" />
+                    <div className="text-[13px] text-[#7a85b0] font-medium">Syncing Infinity Dashboard...</div>
+                </div>
+            </div>
+        )
+    }
+
+    if (error) {
+        return (
+            <div className="flex items-center justify-center h-[60vh]">
+                <div className="flex flex-col items-center gap-4 bg-[#d630310a] p-8 rounded-3xl border border-[#d6303126]">
+                    <AlertCircle className="w-12 h-12 text-[#d63031]" />
+                    <div className="text-[14px] text-[#7a85b0] font-medium text-center">{error}</div>
+                    <button onClick={loadData} className="btn btn-o btn-sm mt-2">Retry Sync</button>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6 animate-in">
@@ -48,19 +87,25 @@ export default function Dashboard() {
                             <strong className="text-white">{stats?.pending_schedules || 0}</strong> scheduled
                         </div>
                         <div className="flex items-center gap-2 text-[12.5px] text-[#7a85b0]">
-                            <strong className="text-white">3</strong> platforms active
+                            <strong className="text-white">{(stats?.active_platforms || []).length}</strong> platforms active
                         </div>
                     </div>
                     <div className="flex gap-2 mt-4 flex-wrap">
-                        <div className="bg-[#ff475714] text-[#ff6b81] border border-[#ff475733] px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5">
-                            <Youtube size={12} /> YouTube Active
-                        </div>
-                        <div className="bg-[#4267b214] text-[#74b9ff] border border-[#4267b233] px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5">
-                            <Facebook size={12} /> Facebook Active
-                        </div>
-                        <div className="bg-[#e8439314] text-[#e84393] border border-[#e8439333] px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5">
-                            <Instagram size={12} /> Instagram Active
-                        </div>
+                        {Array.isArray(stats?.active_platforms) && stats.active_platforms.includes('youtube') && (
+                            <div className="bg-[#ff475714] text-[#ff6b81] border border-[#ff475733] px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5">
+                                <Youtube size={12} /> YouTube Active
+                            </div>
+                        )}
+                        {Array.isArray(stats?.active_platforms) && stats.active_platforms.includes('facebook') && (
+                            <div className="bg-[#4267b214] text-[#74b9ff] border border-[#4267b233] px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5">
+                                <Facebook size={12} /> Facebook Active
+                            </div>
+                        )}
+                        {Array.isArray(stats?.active_platforms) && stats.active_platforms.includes('instagram') && (
+                            <div className="bg-[#e8439314] text-[#e84393] border border-[#e8439333] px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5">
+                                <Instagram size={12} /> Instagram Active
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="absolute right-6 top-1/2 -translate-y-1/2 text-[90px] font-bold text-white opacity-[0.03] pointer-events-none select-none">
@@ -77,16 +122,19 @@ export default function Dashboard() {
                     </div>
                     <div className="text-[11.5px] text-[#7a85b0]">Uploads Today</div>
                     <div className="text-[10.5px] text-[#3d4666] mt-1 flex items-center gap-1">
-                        <TrendingUp size={10} className="text-[#00b894]" /> +3 from yesterday
+                        <TrendingUp size={10} className={clsx(typeof stats?.daily_trend === 'string' && stats.daily_trend.startsWith('+') ? "text-[#00b894]" : "text-[#d63031]")} /> 
+                        {stats?.daily_trend} from yesterday
                     </div>
                 </div>
                 <div className="sc">
                     <div className="text-[22px] mb-1">🔑</div>
                     <div className="sv bg-gradient-to-r from-[#00cec9] to-[#6c5ce7] bg-clip-text text-transparent">
-                        4
+                        {stats?.active_api_keys || 0}
                     </div>
                     <div className="text-[11.5px] text-[#7a85b0]">Active API Keys</div>
-                    <div className="text-[10.5px] text-[#3d4666] mt-1">All operational</div>
+                    <div className="text-[10.5px] text-[#3d4666] mt-1">
+                        {stats?.api_breakdown?.google || 0} G · {stats?.api_breakdown?.meta || 0} M
+                    </div>
                 </div>
                 <div className="sc">
                     <div className="text-[22px] mb-1">⏳</div>
@@ -94,7 +142,7 @@ export default function Dashboard() {
                         {stats?.pending_schedules || 0}
                     </div>
                     <div className="text-[11.5px] text-[#7a85b0]">Pending Schedules</div>
-                    <div className="text-[10.5px] text-[#3d4666] mt-1">Next: 2:00 PM</div>
+                    <div className="text-[10.5px] text-[#3d4666] mt-1">Next: {stats?.next_schedule_time || 'None'}</div>
                 </div>
                 <div className="sc">
                     <div className="text-[22px] mb-1">📺</div>
@@ -102,7 +150,9 @@ export default function Dashboard() {
                         {stats?.total_accounts || 0}
                     </div>
                     <div className="text-[11.5px] text-[#7a85b0]">Total Accounts</div>
-                    <div className="text-[10.5px] text-[#3d4666] mt-1">YT:1 FB:3 IG:2</div>
+                    <div className="text-[10.5px] text-[#3d4666] mt-1">
+                        YT:{stats?.account_breakdown?.youtube || 0} FB:{stats?.account_breakdown?.facebook || 0} IG:{stats?.account_breakdown?.instagram || 0}
+                    </div>
                 </div>
             </div>
 
@@ -131,13 +181,11 @@ export default function Dashboard() {
                                 <Area type="monotone" dataKey="uploads" stroke="#6c5ce7" fillOpacity={1} fill="url(#chartGrad)" strokeWidth={2} />
                             </AreaChart>
                         </ResponsiveContainer>
-                        <div className="flex justify-between text-[10.5px] text-[#3d4666] mt-3">
-                            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+                        <div className="flex justify-between text-[10.5px] text-[#3d4666] mt-3 px-2">
+                            {(chartData || []).map(d => <span key={d.date}>{d.day}</span>)}
                         </div>
                         <div className="flex gap-4 mt-4 text-[12px] text-[#7a85b0]">
-                            <span>📈 Total: <strong className="text-white">108</strong></span>
-                            <span>✅ Success: <strong className="text-[#00b894]">102</strong></span>
-                            <span>❌ Failed: <strong className="text-[#d63031]">6</strong></span>
+                            <span>📈 Total: <strong className="text-white">{(chartData || []).reduce((acc, d) => acc + (d.uploads || 0), 0)}</strong></span>
                         </div>
                     </div>
                 </div>
@@ -179,16 +227,22 @@ export default function Dashboard() {
                     <div className="mt-4">
                         <div className="text-[13.5px] font-semibold text-white mb-2">🔔 Recent Alerts</div>
                         <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-[12.5px] text-[#7a85b0]">
-                                <div className="w-4 h-4 rounded-full bg-[#00b8941a] text-[#00b894] flex items-center justify-center text-[10px]">✓</div>
-                                <span className="flex-1 truncate">AutoStream Studio: "Reel_03.mp4" published</span>
-                                <span className="text-[11px] text-[#3d4666]">2m ago</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-[12.5px] text-[#7a85b0]">
-                                <div className="w-4 h-4 rounded-full bg-[#d630311a] text-[#d63031] flex items-center justify-center text-[10px]">✕</div>
-                                <span className="flex-1 truncate">autostream_reels: Token expired</span>
-                                <span className="text-[11px] text-[#3d4666]">14m ago</span>
-                            </div>
+                            {(stats?.recent_alerts || []).length > 0 ? (stats.recent_alerts || []).map((a, i) => (
+                                <div key={i} className="flex items-center gap-2 text-[12.5px] text-[#7a85b0]">
+                                    <div className={clsx(
+                                        "w-4 h-4 rounded-full flex items-center justify-center text-[10px]",
+                                        a.type === 'error' ? "bg-[#d630311a] text-[#d63031]" : "bg-[#00b8941a] text-[#00b894]"
+                                    )}>
+                                        {a.type === 'error' ? '✕' : '✓'}
+                                    </div>
+                                    <span className="flex-1 truncate">{a.message}</span>
+                                    <span className="text-[11px] text-[#3d4666]">
+                                        {a.time ? new Date(a.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently'}
+                                    </span>
+                                </div>
+                            )) : (
+                                <div className="text-[11px] text-[#3d4666]">No recent alerts.</div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -205,10 +259,10 @@ export default function Dashboard() {
                     </Link>
                 </div>
                 <div className="space-y-2">
-                    {history.length > 0 ? history.map((h, i) => (
+                    {(history || []).length > 0 ? (history || []).map((h, i) => (
                         <div key={h.id} className="bg-[#0d1120] border border-white/5 rounded-xl p-3 flex items-center gap-4 hover:border-white/10 transition-all">
                             <div className="text-[14.5px] font-bold w-20 bg-gradient-to-r from-[#6c5ce7] to-[#e84393] bg-clip-text text-transparent">
-                                {new Date(h.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {h.published_at ? new Date(h.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                             </div>
                             <div className="flex-1">
                                 <div className="text-[13px] font-medium text-white truncate max-w-md">{h.video_title}</div>

@@ -32,16 +32,26 @@ class AccountCreate(BaseModel):
     avatar_url: Optional[str] = None
     subscriber_count: Optional[int] = 0
 
+class AccountStats(BaseModel):
+    published: int = 0
+    pending: int = 0
+    failed: int = 0
+    queue: int = 0
+
 class AccountOut(BaseModel):
     id: uuid.UUID
     platform: PlatformEnum
     channel_name: str
     channel_id: Optional[str]
     group_id: Optional[uuid.UUID]
+    vault_id: Optional[uuid.UUID]
     status: AccountStatusEnum
     avatar_url: Optional[str]
     subscriber_count: int
     drive_folder_link: Optional[str] = None
+    automation_settings: Optional[dict] = None
+    next_publish_time: Optional[str] = None
+    stats: Optional[AccountStats] = None
     created_at: datetime
     class Config:
         from_attributes = True
@@ -227,7 +237,7 @@ class CommentLogOut(BaseModel):
 
 # ── Drive Sync ─────────────────────────────────────────────────────────────
 class DriveSyncRequest(BaseModel):
-    folder_link: str
+    folder_link: Optional[str] = None
     account_id: uuid.UUID
 
 
@@ -241,4 +251,20 @@ class DashboardStats(BaseModel):
     total_views: int = 0
     total_likes: int = 0
     total_comments: int = 0
+    active_platforms: List[str] = Field(default_factory=list)
+    daily_trend: str = "+0"
+    api_breakdown: dict = Field(default_factory=dict)
+    next_schedule_time: Optional[str] = None
+    account_breakdown: Optional[dict] = None
+    recent_alerts: List[dict] = Field(default_factory=list)
+
+class SystemReport(BaseModel):
+    timestamp: datetime
+    database: dict
+    api_keys: dict
+    system_resources: dict
+    last_error: str
+    last_error_time: Optional[datetime]
+    service_status: List[dict] = Field(default_factory=list)
+    containers: List[dict] = Field(default_factory=list)
 

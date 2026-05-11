@@ -13,7 +13,7 @@ from app.schemas import ApiKeyVaultOut, MetaKeyCreate, CustomKeyCreate
 router = APIRouter(prefix="/api-vault", tags=["API Vault"])
 
 
-@router.get("/", response_model=List[ApiKeyVaultOut])
+@router.get("/", response_model=List[dict])
 async def list_api_keys(
     service_name: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
@@ -23,7 +23,80 @@ async def list_api_keys(
     if service_name:
         query = query.where(ApiKeyVault.service_name == service_name)
     result = await db.execute(query)
-    return result.scalars().all()
+    db_keys = list(result.scalars().all())
+    
+    # Add virtual .env keys to the list for visibility in UI
+    from app.core.config import settings
+    from app.services.api_rotation import SYSTEM_KEY_STATUS
+    from datetime import datetime, timezone
+    
+    now = datetime.now(timezone.utc)
+    env_keys = []
+    
+    # Helper to check if virtual key is locked
+    def get_status(vid):
+        status = SYSTEM_KEY_STATUS.get(vid)
+        if status and status["locked_until"] > now:
+            return True, status["reason"]
+        return False, None
+
+    if (not service_name or service_name == "gemini") and settings.GEMINI_API_KEY:
+        locked, reason = get_status("00000000-0000-0000-0000-000000000001")
+        env_keys.append({
+            "id": "00000000-0000-0000-0000-000000000001",
+            "service_name": "gemini",
+            "project_name": "System Default (ENV)",
+            "is_locked": locked,
+            "lock_reason": reason,
+            "daily_usage": 50 if locked else 0,
+            "daily_limit": 50,
+            "created_at": "2024-01-01T00:00:00",
+            "is_system": True
+        })
+    
+    if (not service_name or service_name == "google") and settings.GOOGLE_CLIENT_ID:
+        locked, reason = get_status("00000000-0000-0000-0000-000000000002")
+        env_keys.append({
+            "id": "00000000-0000-0000-0000-000000000002",
+            "service_name": "google",
+            "project_name": "System Default (ENV)",
+            "is_locked": locked,
+            "lock_reason": reason,
+            "daily_usage": 0,
+            "daily_limit": 10000,
+            "created_at": "2024-01-01T00:00:00",
+            "is_system": True
+        })
+
+    if (not service_name or service_name == "meta") and (settings.META_APP_ID or settings.META_CLIENT_ID):
+        locked, reason = get_status("00000000-0000-0000-0000-000000000003")
+        env_keys.append({
+            "id": "00000000-0000-0000-0000-000000000003",
+            "service_name": "meta",
+            "project_name": "System Default (ENV)",
+            "is_locked": locked,
+            "lock_reason": reason,
+            "daily_usage": 0,
+            "daily_limit": 10000,
+            "created_at": "2024-01-01T00:00:00",
+            "is_system": True
+        })
+
+    # Convert to a common format
+    all_keys = []
+    for k in db_keys:
+        all_keys.append({
+            "id": str(k.id),
+            "service_name": k.service_name,
+            "project_name": k.project_name,
+            "is_locked": k.is_locked,
+            "daily_usage": k.daily_usage,
+            "daily_limit": k.daily_limit,
+            "created_at": k.created_at,
+            "is_system": False
+        })
+    
+    return all_keys + env_keys
 
 
 @router.post("/upload-json", status_code=status.HTTP_201_CREATED)
@@ -270,12 +343,20 @@ async def api_vault_stats(db: AsyncSession = Depends(get_db)):
             and_(ApiKeyVault.service_name == "meta", ApiKeyVault.is_locked == False)
         )
     )
+    # Count .env keys
+    from app.core.config import settings
+    env_count = 0
+    if settings.GEMINI_API_KEY: env_count += 1
+    if settings.GOOGLE_CLIENT_ID: env_count += 1
+    if settings.META_APP_ID or settings.META_CLIENT_ID: env_count += 1
+
     return {
-        "total": total.scalar(),
-        "active": active.scalar(),
+        "total": total.scalar() + env_count,
+        "active": active.scalar() + env_count,
         "locked": locked.scalar(),
-        "google_total": google_total.scalar(),
-        "google_active": google_active.scalar(),
-        "meta_total": meta_total.scalar(),
-        "meta_active": meta_active.scalar(),
+        "google_total": google_total.scalar() + (1 if settings.GOOGLE_CLIENT_ID else 0),
+        "google_active": google_active.scalar() + (1 if settings.GOOGLE_CLIENT_ID else 0),
+        "meta_total": meta_total.scalar() + (1 if (settings.META_APP_ID or settings.META_CLIENT_ID) else 0),
+        "meta_active": meta_active.scalar() + (1 if (settings.META_APP_ID or settings.META_CLIENT_ID) else 0),
+        "gemini_total": (1 if settings.GEMINI_API_KEY else 0) + (total.scalar() - google_total.scalar() - meta_total.scalar()), # approximated
     }

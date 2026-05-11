@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { 
     fetchAccounts, deleteAccount, updateAccount, syncAccountNow, 
-    instantPost, triggerPipeline 
+    instantPost, triggerPipeline, listApiKeys 
 } from '../lib/api'
 import { 
     Youtube, Facebook, Instagram, Trash2, Edit2, RefreshCw, 
-    Zap, Play, MoreVertical, X, Check, AlertTriangle, ShieldCheck
+    Zap, Play, MoreVertical, X, Check, AlertTriangle, ShieldCheck, Plus, ExternalLink
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -16,22 +17,39 @@ const PLATFORM_CONFIG = {
 }
 
 export default function Accounts() {
+    const navigate = useNavigate()
     const [accounts, setAccounts] = useState([])
+    const [vaultKeys, setVaultKeys] = useState([])
     const [filter, setFilter] = useState('all')
     const [loading, setLoading] = useState(true)
-    const [activeOverlay, setActiveOverlay] = useState(null) // { type: 'edit'|'del'|'inst', id: null }
+    const [activeOverlay, setActiveOverlay] = useState(null)
+    const [showAddModal, setShowAddModal] = useState(false)
+    const [syncingAll, setSyncingAll] = useState(false)
 
     const loadAccounts = async () => {
+        setLoading(true)
         try {
             const res = await fetchAccounts(filter === 'all' ? null : filter)
             setAccounts(res.data)
         } catch (e) { console.error(e) }
-        finally { setLoading(false) }
+        finally { 
+            // Small delay to make it feel real
+            setTimeout(() => setLoading(false), 500)
+        }
+    }
+
+    const loadVaultKeys = async () => {
+        try {
+            const res = await listApiKeys()
+            setVaultKeys(res.data)
+        } catch (e) { console.error(e) }
     }
 
     useEffect(() => { loadAccounts() }, [filter])
+    useEffect(() => { loadVaultKeys() }, [])
 
-    const handleDelete = async (id) => {
+    const handleDelete = async (id, name) => {
+        if (!window.confirm(`⚠️ ARE YOU SURE?\n\nYou are about to delete "${name}". This will stop all active automations for this channel.`)) return
         try {
             await deleteAccount(id)
             setAccounts(accounts.filter(a => a.id !== id))
@@ -42,10 +60,37 @@ export default function Accounts() {
     const handleAction = async (action, account) => {
         try {
             if (action === 'sync') await syncAccountNow(account.id)
-            if (action === 'run') await triggerPipeline(account.id)
-            if (action === 'instant') await instantPost(account.id)
+            if (action === 'run' || action === 'instant') await instantPost(account.id)
             loadAccounts()
         } catch (e) { console.error(e) }
+    }
+
+    const handleSyncAll = async () => {
+        if (accounts.length === 0) return
+        setSyncingAll(true)
+        try {
+            await Promise.all(accounts.map(a => syncAccountNow(a.id)))
+            alert(`✅ Sync triggered for ${accounts.length} channels!`)
+            loadAccounts()
+        } catch (e) { 
+            console.error(e)
+            alert('Sync All failed for some accounts')
+        } finally {
+            setSyncingAll(false)
+        }
+    }
+
+    const initiateOAuth = async (platform, vaultId = null) => {
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+        const endpoint = platform === 'youtube' ? '/api/v1/accounts/oauth/google/init' : '/api/v1/accounts/oauth/meta/init'
+        const url = new URL(endpoint, API_BASE || window.location.origin)
+        if (vaultId) url.searchParams.append('vault_id', vaultId)
+        
+        try {
+            const res = await fetch(url.toString())
+            const data = await res.json()
+            if (data.auth_url) window.location.href = data.auth_url
+        } catch (e) { alert('OAuth failed to start') }
     }
 
     return (
@@ -57,11 +102,19 @@ export default function Accounts() {
                     <p className="text-[13px] text-[#7a85b0] mt-1">Manage your social media accounts and publishing settings</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={loadAccounts} className="btn btn-o btn-sm">
-                        <RefreshCw className="w-3.5 h-3.5" /> Refresh All
+                    <button 
+                        onClick={handleSyncAll} 
+                        disabled={syncingAll || accounts.length === 0}
+                        className={clsx("btn btn-o btn-sm", syncingAll && "opacity-50")}
+                    >
+                        <RefreshCw className={clsx("w-3.5 h-3.5", syncingAll && "animate-spin")} /> 
+                        {syncingAll ? 'Syncing...' : 'Sync All Channels'}
                     </button>
-                    <button className="btn btn-g btn-sm">
-                        + Add Account
+                    <button onClick={loadAccounts} className="btn btn-o btn-sm">
+                        <RefreshCw className={clsx("w-3.5 h-3.5", loading && "animate-spin")} /> Refresh UI
+                    </button>
+                    <button onClick={() => setShowAddModal(true)} className="btn btn-g btn-sm">
+                        <Plus className="w-3.5 h-3.5" /> Add Account
                     </button>
                 </div>
             </div>
@@ -110,14 +163,14 @@ export default function Accounts() {
                                         )} />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-white text-[15px] truncate">{account.name}</div>
+                                        <div className="font-bold text-white text-[15px] truncate">{account.channel_name}</div>
                                         <div className="text-[11px] text-[#7a85b0] mt-0.5 uppercase tracking-wide">
-                                            {account.platform} · {account.handle || account.platform_id}
+                                            {account.platform} · {account.channel_id?.slice(0, 10)}...
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
                                         <div className="text-[13px] font-bold" style={{ background: cfg.color, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                                            {account.subscribers_count || '0'}
+                                            {account.subscriber_count || '0'}
                                         </div>
                                         <div className="text-[9px] text-[#3d4666] uppercase font-bold tracking-wider">Followers</div>
                                     </div>
@@ -158,7 +211,7 @@ export default function Accounts() {
                                     <button onClick={() => setActiveOverlay({ type: 'inst', id: account.id })} className="flex-1 bg-[#131829] hover:bg-[#fdcb6e1a] border border-white/5 hover:border-[#fdcb6e] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#fdcb6e]" title="Instant Post">
                                         <Zap className="w-4 h-4 mx-auto" />
                                     </button>
-                                    <button onClick={() => setActiveOverlay({ type: 'del', id: account.id })} className="flex-1 bg-[#131829] hover:bg-[#d630311a] border border-white/5 hover:border-[#d63031] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#d63031]" title="Delete">
+                                    <button onClick={() => handleDelete(account.id, account.channel_name)} className="flex-1 bg-[#131829] hover:bg-[#d630311a] border border-white/5 hover:border-[#d63031] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#d63031]" title="Delete">
                                         <Trash2 className="w-4 h-4 mx-auto" />
                                     </button>
                                 </div>
@@ -178,7 +231,7 @@ export default function Accounts() {
                                             </div>
                                             <div className="text-[16px] font-bold text-white mb-2">Delete Channel?</div>
                                             <div className="text-[12px] text-[#7a85b0] mb-6 px-4">
-                                                "{account.name}" will be removed. All pending schedules will be cancelled.
+                                                "{account.channel_name}" will be removed. All pending schedules will be cancelled.
                                             </div>
                                             <div className="flex gap-2 w-full">
                                                 <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5">Cancel</button>
@@ -194,7 +247,7 @@ export default function Accounts() {
                                             </div>
                                             <div className="text-[16px] font-bold text-white mb-2">Instant Post</div>
                                             <div className="text-[12px] text-[#7a85b0] mb-6">
-                                                Skip the queue and publish the next video from "{account.name}" immediately?
+                                                Skip the queue and publish the next video from "{account.channel_name}" immediately?
                                             </div>
                                             <div className="flex gap-2 w-full">
                                                 <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5">Cancel</button>
@@ -204,28 +257,17 @@ export default function Accounts() {
                                     )}
 
                                     {activeOverlay.type === 'edit' && (
-                                        <div className="w-full h-full flex flex-col pt-4">
-                                            <div className="text-[16px] font-bold text-white mb-4">✏️ Edit {account.name}</div>
-                                            <div className="space-y-3 flex-1 text-left px-2">
-                                                <div>
-                                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-1">Display Name</label>
-                                                    <input className="w-full bg-[#1a2035] border border-white/10 rounded-lg px-3 py-2 text-white text-[13px]" defaultValue={account.name} />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-1">Daily Post Limit</label>
-                                                    <input type="number" className="w-full bg-[#1a2035] border border-white/10 rounded-lg px-3 py-2 text-white text-[13px]" defaultValue="3" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-1">Timezone</label>
-                                                    <select className="w-full bg-[#1a2035] border border-white/10 rounded-lg px-3 py-2 text-white text-[13px]">
-                                                        <option>Asia/Dhaka (UTC+6)</option>
-                                                        <option>UTC</option>
-                                                    </select>
-                                                </div>
+                                        <div className="w-full h-full flex flex-col items-center justify-center pt-4">
+                                            <div className="text-[16px] font-bold text-white mb-4">Edit Automation</div>
+                                            <div className="text-[12px] text-[#7a85b0] mb-8">
+                                                Go to the Workspace Wizard to modify titles, schedules, and branding for "{account.channel_name}".
                                             </div>
-                                            <div className="flex gap-2 w-full mt-4">
+                                            <div className="flex gap-2 w-full">
                                                 <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5">Cancel</button>
-                                                <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-gradient-to-r from-[#6c5ce7] to-[#e84393] text-white font-bold text-[13px]">Save Changes</button>
+                                                <button onClick={() => {
+                                                    setActiveOverlay(null)
+                                                    navigate(`/workspace/${account.id}`)
+                                                }} className="flex-1 py-2 rounded-xl bg-gradient-to-r from-[#6c5ce7] to-[#e84393] text-white font-bold text-[13px]">Open Wizard</button>
                                             </div>
                                         </div>
                                     )}
@@ -235,6 +277,120 @@ export default function Accounts() {
                     )
                 })}
             </div>
+
+            {/* ── Add Account Modal ─────────────────────────────────── */}
+            {showAddModal && (
+                <div 
+                    className="fixed inset-0 z-[100] grid place-items-start justify-center bg-[#080b14fb] backdrop-blur-2xl overflow-y-auto px-4 py-10 sm:py-20"
+                    style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+                >
+                    <div className="bg-[#0d1120] border border-white/10 w-full max-w-5xl rounded-[32px] overflow-hidden shadow-2xl flex flex-col mb-20 relative min-h-[600px]">
+                        <div className="p-6 sm:p-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                            <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-3">
+                                <div className="p-2 bg-[#6c5ce720] rounded-xl text-[#6c5ce7]">
+                                    <Plus size={24} />
+                                </div>
+                                Connect New Account
+                            </h2>
+                            <button onClick={() => setShowAddModal(false)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-[#7a85b0] hover:text-white hover:bg-white/10 transition-all">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-8 overflow-y-auto flex-1 custom-scrollbar">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                {/* Left Side: Steps & Platform Selection */}
+                                <div className="space-y-8">
+                                    <div className="p-6 bg-gradient-to-br from-[#6c5ce710] to-transparent border border-[#6c5ce720] rounded-[24px] space-y-4">
+                                        <h3 className="text-[#a29bfe] font-bold flex items-center gap-2">
+                                            <ShieldCheck size={18} /> Connection Guide:
+                                        </h3>
+                                        <ul className="space-y-3">
+                                            {[
+                                                "Pick your platform (YouTube or Meta).",
+                                                "Sign in and grant permissions.",
+                                                "The system will sync your channel data.",
+                                                "Automation starts immediately after sync."
+                                            ].map((txt, i) => (
+                                                <li key={i} className="flex gap-3 text-[12px] text-[#7a85b0]">
+                                                    <span className="w-5 h-5 rounded-full bg-[#6c5ce720] flex items-center justify-center text-[#6c5ce7] text-[10px] font-bold shrink-0">{i+1}</span>
+                                                    {txt}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em]">1. Select Platform</label>
+                                            <span className="text-[10px] text-[#00b894] font-bold bg-[#00b89410] px-2 py-0.5 rounded-full">RECOMMENDED</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            {[
+                                                { id: 'youtube', label: 'YouTube / Google', icon: Youtube, color: '#ff4757', desc: 'Sync videos via Drive' },
+                                                { id: 'facebook', label: 'Meta (FB / IG)', icon: Facebook, color: '#3498db', desc: 'Post to Pages & IG' }
+                                            ].map(p => (
+                                                <button 
+                                                    key={p.id}
+                                                    onClick={() => initiateOAuth(p.id)}
+                                                    className="group relative flex flex-col items-center justify-center gap-3 p-8 rounded-[24px] bg-[#131829] border border-white/5 hover:border-[#6c5ce7] hover:bg-[#6c5ce708] transition-all text-center"
+                                                >
+                                                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl bg-white/5 group-hover:scale-110 transition-transform" style={{ color: p.color }}>
+                                                        <p.icon size={40} />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-black text-white text-[16px]">{p.label}</div>
+                                                        <div className="text-[11px] text-[#3d4666] font-bold uppercase tracking-wider mt-1">{p.desc}</div>
+                                                    </div>
+                                                    <div className="mt-4 px-4 py-1.5 rounded-full bg-white/5 text-[11px] text-[#7a85b0] group-hover:bg-[#6c5ce7] group-hover:text-white transition-all font-bold">Connect Now</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right Side: Advanced Vault Selection */}
+                                <div className="space-y-6 border-l border-white/5 pl-10 hidden lg:block">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em]">2. Specific Project</label>
+                                        <span className="text-[9px] bg-[#6c5ce720] text-[#6c5ce7] px-2 py-0.5 rounded-full font-bold">MANUAL OVERRIDE</span>
+                                    </div>
+                                    <p className="text-[11px] text-[#7a85b0] leading-relaxed">
+                                        Optional: Choose a specific API project from your Vault if you want to use a particular quota limit.
+                                    </p>
+                                    <div className="max-h-[350px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                                        {vaultKeys.length > 0 ? vaultKeys.filter(k => k.service_name !== 'gemini').map(k => (
+                                            <div 
+                                                key={k.id} 
+                                                onClick={() => initiateOAuth(k.service_name, k.id)}
+                                                className="p-4 rounded-2xl bg-[#131829] border border-white/5 hover:border-[#6c5ce7] cursor-pointer group transition-all"
+                                            >
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-[13px] font-bold text-white group-hover:text-[#6c5ce7] transition-colors">{k.project_name}</span>
+                                                    <span className="text-[9px] text-[#3d4666] font-bold uppercase px-2 py-0.5 bg-white/5 rounded-md">{k.service_name}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[10px]">
+                                                    <span className="text-[#3d4666]">Quota Status</span>
+                                                    <span className={clsx("font-bold", k.is_locked ? "text-[#d63031]" : "text-[#00b894]")}>
+                                                        {Math.round((k.daily_usage / k.daily_limit) * 100)}% Used
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )) : (
+                                            <div className="text-center py-20 bg-white/2 rounded-[30px] border border-dashed border-white/5">
+                                                <ShieldCheck size={40} className="mx-auto mb-3 text-[#131829]" />
+                                                <div className="text-[11px] text-[#3d4666] font-bold uppercase tracking-widest">No Projects in Vault</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-8 bg-[#131829]/50 border-t border-white/5 flex justify-end">
+                            <button onClick={() => setShowAddModal(false)} className="px-8 py-3 rounded-2xl bg-[#131829] text-[#7a85b0] font-bold">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -14,13 +14,13 @@ export default function App() {
     return (
         <Routes>
             <Route path="/" element={<Layout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
+                <Route index element={<Navigate to="/overview" replace />} />
+                <Route path="overview" element={<Dashboard />} />
                 <Route path="accounts" element={<Accounts />} />
                 <Route path="autopublish" element={<AutoPublish />} />
                 <Route path="upload" element={<UploadZone />} />
                 <Route path="wizard" element={<Workspace />} />
-                <Route path="api-vault" element={<ApiVault />} />
+                <Route path="vault" element={<ApiVault />} />
                 <Route path="engagement" element={<Engagement />} />
                 <Route path="logs" element={<Logs />} />
                 <Route path="system-health" element={<SystemHealth />} />

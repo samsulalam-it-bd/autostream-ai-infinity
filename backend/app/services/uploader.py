@@ -113,16 +113,21 @@ async def list_drive_folder_videos(folder_id: str, access_token: str) -> list[di
 
 def extract_folder_id_from_link(drive_link: str) -> Optional[str]:
     """Extract a Google Drive folder ID from a share URL."""
+    if not drive_link or not isinstance(drive_link, str):
+        return None
     import re
     patterns = [
-        r"folders/([a-zA-Z0-9_-]+)",
-        r"id=([a-zA-Z0-9_-]+)",
-        r"/d/([a-zA-Z0-9_-]+)",
+        r"folders/([a-zA-Z0-9_-]{25,})",
+        r"id=([a-zA-Z0-9_-]{25,})",
+        r"/d/([a-zA-Z0-9_-]{25,})",
     ]
     for pattern in patterns:
         match = re.search(pattern, drive_link)
         if match:
             return match.group(1)
+    # Fallback: if it's just a raw ID
+    if re.match(r"^[a-zA-Z0-9_-]{25,}$", drive_link):
+        return drive_link
     return None
 
 
@@ -192,6 +197,20 @@ async def upload_to_youtube(
     video_id = response.get("id")
     video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
     logger.info(f"YouTube upload complete: {video_url}")
+    
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.api_rotation import increment_usage
+        from app.models.models import Account
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as db:
+            acc_res = await db.execute(select(Account).where(Account.id == credentials.account_id if hasattr(credentials, 'account_id') else None))
+            acc = acc_res.scalar_one_or_none()
+            if acc and acc.vault_id:
+                await increment_usage(acc.vault_id, db, amount=1600) # YouTube upload is expensive (approx 1600 units)
+    except Exception as e:
+        logger.error(f"Failed to increment YouTube usage: {e}")
+
     return {"video_id": video_id, "url": video_url, "response": response}
 
 
@@ -201,6 +220,7 @@ async def upload_to_facebook(
     description: str,
     access_token: str,
     page_id: str,
+    account_id: Optional[str] = None,
 ) -> dict:
     """Upload a video to a Facebook Page using the Graph API."""
     upload_url = f"https://graph-video.facebook.com/v19.0/{page_id}/videos"
@@ -223,6 +243,22 @@ async def upload_to_facebook(
     video_id = data.get("id")
     video_url = f"https://www.facebook.com/video/{video_id}" if video_id else ""
     logger.info(f"Facebook upload complete: {video_url}")
+
+    try:
+        if account_id:
+            from app.database import AsyncSessionLocal
+            from app.services.api_rotation import increment_usage
+            from app.models.models import Account
+            from sqlalchemy import select
+            async with async_session_factory() as db:
+                import uuid
+                acc_res = await db.execute(select(Account).where(Account.id == uuid.UUID(account_id)))
+                acc = acc_res.scalar_one_or_none()
+                if acc and acc.vault_id:
+                    await increment_usage(acc.vault_id, db, amount=1)
+    except Exception as e:
+        logger.error(f"Failed to increment Meta usage: {e}")
+
     return {"video_id": video_id, "url": video_url, "response": data}
 
 

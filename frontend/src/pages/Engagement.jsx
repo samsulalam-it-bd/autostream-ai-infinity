@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, Send, Trash2, Sparkles, Wand2, Copy, Check, MessageSquare } from 'lucide-react'
+import { Bot, Send, Trash2, Sparkles, Wand2, Copy, Check, MessageSquare, Play, RefreshCw } from 'lucide-react'
+import { aiChat, quickGen } from '../lib/api'
 import clsx from 'clsx'
 
 export default function Engagement() {
@@ -8,7 +9,9 @@ export default function Engagement() {
     ])
     const [input, setInput] = useState('')
     const [loading, setLoading] = useState(false)
+    const [qLoading, setQLoading] = useState(false)
     const [qResult, setQResult] = useState(null)
+    const [qForm, setQForm] = useState({ topic: '', platform: 'YouTube', style: '🔥 Viral' })
     const scrollRef = useRef()
 
     useEffect(() => {
@@ -22,11 +25,28 @@ export default function Engagement() {
         setInput('')
         setLoading(true)
 
-        // Mock AI thinking
-        setTimeout(() => {
-            setMessages(prev => [...prev, { role: 'bot', text: "I've generated some optimized tags for your video topic: #viral #tech #automation #trending2024" }])
+        try {
+            const res = await aiChat(text.trim())
+            setMessages(prev => [...prev, { role: 'bot', text: res.data.reply }])
+        } catch (e) {
+            console.error(e)
+            setMessages(prev => [...prev, { role: 'bot', text: "⚠️ Failed to connect to AI. Please check backend." }])
+        } finally {
             setLoading(false)
-        }, 1000)
+        }
+    }
+
+    const handleQuickGen = async () => {
+        if (!qForm.topic.trim()) return
+        setQLoading(true)
+        try {
+            const res = await quickGen(qForm.topic, qForm.platform, qForm.style)
+            setQResult(res.data)
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setQLoading(false)
+        }
     }
 
     const quickPrompts = [
@@ -123,30 +143,64 @@ export default function Engagement() {
                     <div className="space-y-4">
                         <div>
                             <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Video Topic / Filename</label>
-                            <input className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#6c5ce7]" placeholder="e.g. iPhone 16 Pro Max Review 2024" />
+                            <input 
+                                className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#6c5ce7]" 
+                                placeholder="e.g. iPhone 16 Pro Max Review 2024" 
+                                value={qForm.topic}
+                                onChange={(e) => setQForm({...qForm, topic: e.target.value})}
+                            />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Platform</label>
-                                <select className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-[#7a85b0] outline-none">
+                                <select 
+                                    className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-[#7a85b0] outline-none"
+                                    value={qForm.platform}
+                                    onChange={(e) => setQForm({...qForm, platform: e.target.value})}
+                                >
                                     <option>YouTube</option><option>Facebook</option><option>Instagram</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Style</label>
-                                <select className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-[#7a85b0] outline-none">
+                                <select 
+                                    className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-[#7a85b0] outline-none"
+                                    value={qForm.style}
+                                    onChange={(e) => setQForm({...qForm, style: e.target.value})}
+                                >
                                     <option>🔥 Viral</option><option>💼 Professional</option>
                                 </select>
                             </div>
                         </div>
-                        <button className="w-full btn btn-g justify-center py-3">
-                            🚀 Generate Full Content Pack
+                        <button 
+                            onClick={handleQuickGen}
+                            disabled={qLoading}
+                            className="w-full btn btn-g justify-center py-3"
+                        >
+                            {qLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : '🚀 Generate Full Content Pack'}
                         </button>
                     </div>
 
                     {qResult && (
-                        <div className="bg-[#131829] rounded-2xl p-5 border border-white/5 animate-in">
-                            {/* Result content would go here */}
+                        <div className="bg-[#131829] rounded-2xl p-5 border border-white/5 animate-in space-y-4">
+                            <div>
+                                <div className="text-[10px] text-[#3d4666] font-bold uppercase mb-1">Title</div>
+                                <div className="text-[13px] text-white font-medium">{qResult.title}</div>
+                            </div>
+                            <div>
+                                <div className="text-[10px] text-[#3d4666] font-bold uppercase mb-1">Description</div>
+                                <div className="text-[12px] text-[#7a85b0] leading-relaxed">{qResult.description}</div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {qResult.hashtags.map(h => (
+                                    <span key={h} className="text-[11px] text-[#6c5ce7] font-bold">{h}</span>
+                                ))}
+                            </div>
+                            <button className="w-full btn btn-o btn-sm gap-2 justify-center" onClick={() => {
+                                navigator.clipboard.writeText(`${qResult.title}\n\n${qResult.description}\n\n${qResult.hashtags.join(' ')}`)
+                            }}>
+                                <Copy size={14} /> Copy All
+                            </button>
                         </div>
                     )}
                 </div>

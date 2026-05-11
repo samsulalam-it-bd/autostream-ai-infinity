@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
 const api = axios.create({
     baseURL: `${API_BASE}/api/v1`,
@@ -30,57 +30,51 @@ export const testTelegram = (message = '') => api.post('/dashboard/test-telegram
 export const fetchTelegramConfig = () => api.get('/dashboard/telegram-config')
 export const saveTelegramConfig = (data) => api.post('/dashboard/telegram-config', data)
 export const fetchTelegramBotInfo = () => api.post('/dashboard/telegram-bot-info')
-export const cleanupPublished = (days = 7) => api.delete(`/dashboard/cleanup-published?days=${days}`)
 export const fetchSystemReport = () => api.get('/dashboard/system-report')
+export const cleanupPublished = (days = 7) => api.delete(`/dashboard/cleanup-published?days=${days}`)
 
-// ── Accounts ───────────────────────────────────────────────────────────────
+// ── Accounts & Workspace ───────────────────────────────────────────────────
 export const fetchAccounts = (platform) => api.get('/accounts/', { params: platform ? { platform } : {} })
 export const createAccount = (data) => api.post('/accounts/', data)
 export const deleteAccount = (id) => api.delete(`/accounts/${id}`)
 export const updateAccount = (id, data) => api.patch(`/accounts/${id}`, data)
-export const updateAccountFolder = (id, folderLink) => api.patch(`/accounts/${id}`, { drive_folder_link: folderLink })
-export const fetchGroups = () => api.get('/accounts/groups')
-export const createGroup = (data) => api.post('/accounts/groups', data)
-export const deleteGroup = (id) => api.delete(`/accounts/groups/${id}`)
-export const getGoogleOAuthUrl = () => api.get('/accounts/oauth/google/init')
-export const getMetaOAuthUrl = () => api.get('/accounts/oauth/meta/init')
 export const refreshAccountToken = (id) => api.post(`/accounts/${id}/refresh-token`)
 
-// ── API Vault ──────────────────────────────────────────────────────────────
-export const fetchApiKeys = (serviceName) => api.get('/api-vault/', { params: serviceName ? { service_name: serviceName } : {} })
-export const fetchVaultStats = () => api.get('/api-vault/stats/summary')
-export const deleteApiKey = (id) => api.delete(`/api-vault/${id}`)
-export const unlockApiKey = (id) => api.post(`/api-vault/${id}/unlock`)
-export const testApiKey = (id) => api.post(`/api-vault/${id}/test`)
-export const addMetaApiKey = (data) => api.post('/api-vault/meta-key', data)
-export const uploadJsonCredentials = (files, serviceName = 'google') => {
-    const formData = new FormData()
-    files.forEach(file => formData.append('files', file))
-    return axios.post(`${API_BASE}/api/v1/api-vault/upload-json?service_name=${serviceName}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 60000,
-    })
-}
-export const addCustomApiKey = (data) => api.post('/api-vault/custom-key', data)
-export const fetchAiRouting = () => api.get('/dashboard/ai-routing')
-export const saveAiRouting = (data) => api.post('/dashboard/ai-routing', data)
+// This is for the "Edit" button in Accounts/UploadZone to update automation settings
+export const updateWorkspaceSettings = (accountId, settings) => api.patch(`/workspace/${accountId}/settings`, settings)
+export const fetchWorkspaceSummary = (accountId) => api.get(`/workspace/${accountId}/summary`)
 
-// ── Videos ─────────────────────────────────────────────────────────────────
-export const fetchVideos = (status, unassignedOnly = false) => api.get('/videos/', { params: { ...(status ? { status_filter: status } : {}), ...(unassignedOnly ? { unassigned_only: true } : {}) } })
-export const syncDriveFolder = (accountId, folderLink) => api.post('/videos/sync-drive', { account_id: accountId, folder_link: folderLink })
-export const fetchTaskStatus = (taskId) => api.get(`/videos/task-status/${taskId}`)
+// ── Videos & Drive ─────────────────────────────────────────────────────────
+export const fetchVideos = (status) => api.get('/videos/', { params: { status_filter: status } })
+export const syncAccountNow = (accountId) => api.post('/videos/sync-drive', { account_id: accountId })
 export const deleteVideo = (id) => api.delete(`/videos/${id}`)
 
-// ── Schedules ─────────────────────────────────────────────────────────────
+// ── Schedules & Automation ───────────────────────────────────────────────
 export const fetchSchedules = (published) => api.get('/schedules/', { params: published !== undefined ? { is_published: published } : {} })
-export const createSchedule = (data) => api.post('/schedules/', data)
 export const createAutoDrip = (data) => api.post('/schedules/auto-drip', data)
 export const deleteSchedule = (id) => api.delete(`/schedules/${id}`)
-export const bulkDeleteSchedules = (ids) => api.post('/schedules/bulk-delete', { ids })
-export const triggerSchedule = (id) => api.post(`/schedules/${id}/trigger`)
+export const triggerPipeline = (id) => api.post(`/schedules/${id}/trigger`)
+export const instantPost = (accountId) => api.post(`/schedules/instant-post-next`, { account_id: accountId }) // We might need to add this to backend if missing
 
 // ── Logs ───────────────────────────────────────────────────────────────────
 export const fetchLogs = (limit = 100) => api.get('/logs/', { params: { limit } })
 export const getLogsStreamUrl = () => `${API_BASE}/api/v1/logs/stream`
+
+// ── API Vault & Rotation ──────────────────────────────────────────────────
+export const listApiKeys = (service) => api.get('/api-vault/', { params: { service_name: service } })
+export const uploadGoogleKeys = (files) => {
+    const formData = new FormData()
+    files.forEach(f => formData.append('files', f))
+    return api.post('/api-vault/upload-json', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+}
+export const addMetaKey = (data) => api.post('/api-vault/meta-key', data)
+export const addCustomKey = (data) => api.post('/api-vault/custom-key', data)
+export const deleteApiKey = (id) => api.delete(`/api-vault/${id}`)
+export const unlockApiKey = (id) => api.post(`/api-vault/${id}/unlock`)
+export const testApiKey = (id) => api.post(`/api-vault/${id}/test`)
+
+// ── AI Engagement ──────────────────────────────────────────────────────────
+export const aiChat = (message, persona) => api.post('/engagement/chat', { message, persona })
+export const quickGen = (topic, platform, style) => api.post('/engagement/quick-gen', { topic, platform, style })
 
 export default api

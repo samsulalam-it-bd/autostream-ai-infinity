@@ -58,11 +58,23 @@ async def sync_drive_folder(req: DriveSyncRequest, background_tasks: BackgroundT
     """
     from app.services.uploader import extract_folder_id_from_link
     from app.worker import sync_drive_folder as sync_drive_task
+    from app.models.models import Account
 
-    folder_id = extract_folder_id_from_link(req.folder_link)
+    folder_link = req.folder_link
+    if not folder_link:
+        # Try to get from account
+        result = await db.execute(select(Account).where(Account.id == req.account_id))
+        acc = result.scalar_one_or_none()
+        if acc and acc.drive_folder_link:
+            folder_link = acc.drive_folder_link
+        else:
+            raise HTTPException(status_code=400, detail="Drive folder link required (none provided and none saved for account)")
+
+    folder_id = extract_folder_id_from_link(folder_link)
     if not folder_id:
         return {"error": "Invalid Drive folder link", "synced": 0}
-    task = sync_drive_task.apply_async(args=[req.folder_link, str(req.account_id)], queue="default")
+    
+    task = sync_drive_task.apply_async(args=[folder_link, str(req.account_id)], queue="default")
     return {"task_id": task.id, "folder_id": folder_id, "message": "Drive sync task queued."}
 
 

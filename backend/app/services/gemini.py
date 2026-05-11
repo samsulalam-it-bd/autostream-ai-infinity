@@ -95,14 +95,13 @@ Strict Rules for {platform.upper()}:
 
     # --- GEMINI ---
     if provider == "gemini":
-        key = api_key or settings.GEMINI_API_KEY
-        if not key:
-            logger.warning("No Gemini API key configured. Using fallback metadata.")
-            return _fallback_metadata()
+        from app.services.api_rotation import get_active_api_key, report_quota_exceeded, increment_usage
+        from app.database import AsyncSessionLocal
 
         model_name = settings.GEMINI_MODEL or "gemini-2.0-flash"
         parts: list[object] = [prompt]
-
+        
+        # Prepare parts
         frames_added = 0
         for frame_path in frame_paths:
             if Path(frame_path).exists():
@@ -120,13 +119,38 @@ Strict Rules for {platform.upper()}:
             logger.warning("No valid frames found for Gemini analysis. Using generic metadata.")
             return _fallback_metadata()
 
-        import asyncio
-        try:
-            response = await asyncio.to_thread(_gemini_generate_sync, key, model_name, parts)
-            response_text = (getattr(response, "text", "") or "").strip()
-        except Exception as e:
-            logger.error(f"Gemini AI analysis failed: {e}")
-            return _fallback_metadata()
+        # Try multiple keys if needed
+        async with AsyncSessionLocal() as db:
+            for _retry in range(3): # Try up to 3 different keys
+                vault_key = await get_active_api_key("gemini", db)
+                key = vault_key.credentials_json.get("api_key") if vault_key else (api_key or settings.GEMINI_API_KEY)
+                
+                if not key:
+                    logger.warning("No Gemini API key available in vault or config. Using fallback.")
+                    return _fallback_metadata()
+
+                try:
+                    import asyncio
+                    response = await asyncio.to_thread(_gemini_generate_sync, key, model_name, parts)
+                    response_text = (getattr(response, "text", "") or "").strip()
+                    
+                    if vault_key:
+                        await increment_usage(vault_key.id, db)
+                    
+                    break # Success!
+                except Exception as e:
+                    err_msg = str(e).lower()
+                    if "429" in err_msg or "quota" in err_msg:
+                        logger.warning(f"Gemini Key Quota Exceeded. Reporting and rotating...")
+                        if vault_key:
+                            await report_quota_exceeded(vault_key.id, db, reason="429 Quota Exceeded")
+                        continue # Try next key
+                    else:
+                        logger.error(f"Gemini AI analysis failed: {e}")
+                        return _fallback_metadata()
+            else:
+                logger.error("All available Gemini keys exhausted or failed.")
+                return _fallback_metadata()
 
     # --- GROK / OPENAI ---
     elif provider in ["grok", "openai"]:

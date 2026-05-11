@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { fetchAccounts, updateWorkspaceSettings, syncAccountNow } from '../lib/api'
+import { useNavigate, useParams } from 'react-router-dom'
 import { 
-    Check, ChevronLeft, ChevronRight, HardDrive, Wand2, 
-    Settings2, Calendar, Layout, Trash2, Plus, Play
+    fetchAccounts, updateWorkspaceSettings, syncAccountNow, 
+    fetchVideos, createAutoDrip 
+} from '../lib/api'
+import { 
+    ChevronDown, Folder, HardDrive, RefreshCw, CheckCircle2, 
+    AlertCircle, FileVideo, Wand2, ArrowRight, Play, Check, ChevronLeft, ChevronRight,
+    Settings2, Calendar, Layout, Trash2, Plus, X
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -11,20 +15,28 @@ const STEPS = ['Targets', 'Media', 'Editor', 'Schedule', 'Review']
 
 export default function WorkspaceWizard() {
     const navigate = useNavigate()
+    const { id: editId } = useParams()
     const [step, setStep] = useState(1)
     const [accounts, setAccounts] = useState([])
     const [selectedAccounts, setSelectedAccounts] = useState([])
     const [driveUrl, setDriveUrl] = useState('')
     const [isSyncing, setIsSyncing] = useState(false)
     const [syncProgress, setSyncProgress] = useState(0)
+    const [foundVideos, setFoundVideos] = useState([])
     
     // Form State
     const [formData, setFormData] = useState({
         title_mode: 'ai_auto',
         desc_template: 'Check out our latest content! 🔥 Subscribe for more amazing videos every day!\n\n#autostream #viral #subscribe',
         tags: '#autostream #viral #trending #youtube #2024',
-        format: '16:9',
+        format: '9:16',
         watermark_pos: 'BR',
+        overlay_text: '',
+        text_pos: 'TC',
+        text_color: '#ffffff',
+        watermark_opacity: 0.8,
+        watermark_size: 15,
+        logo_url: null,
         timezone: 'Asia/Dhaka',
         days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
         limit: 3,
@@ -35,9 +47,20 @@ export default function WorkspaceWizard() {
         const load = async () => {
             const res = await fetchAccounts()
             setAccounts(res.data)
+            
+            if (editId) {
+                setSelectedAccounts([editId])
+                const target = res.data.find(a => a.id === editId)
+                if (target) {
+                    setDriveUrl(target.drive_folder_link || '')
+                    if (target.automation_settings) {
+                        setFormData(prev => ({ ...prev, ...target.automation_settings }))
+                    }
+                }
+            }
         }
         load()
-    }, [])
+    }, [editId])
 
     const toggleAccount = (id) => {
         setSelectedAccounts(prev => 
@@ -45,32 +68,61 @@ export default function WorkspaceWizard() {
         )
     }
 
-    const handleSync = () => {
-        if (!driveUrl) return
+    const handleSync = async () => {
+        if (!driveUrl || selectedAccounts.length === 0) return
         setIsSyncing(true)
-        let p = 0
-        const iv = setInterval(() => {
-            p += Math.random() * 20
-            if (p >= 100) {
-                p = 100
-                clearInterval(iv)
+        setSyncProgress(10)
+        
+        try {
+            // Trigger sync for the first selected account as a reference
+            const res = await syncAccountNow(selectedAccounts[0])
+            // Wait a few seconds to simulate/wait for background task
+            setTimeout(async () => {
+                setSyncProgress(100)
                 setIsSyncing(false)
-            }
-            setSyncProgress(Math.round(p))
-        }, 300)
+                // Fetch videos assigned to this account now
+                const vRes = await fetchVideos(null, true)
+                setFoundVideos(vRes.data.slice(0, 18)) // Just a preview
+            }, 2000)
+        } catch (e) { 
+            console.error(e)
+            setIsSyncing(false)
+        }
     }
 
     const handleLaunch = async () => {
-        // In a real app, we'd save settings for each selected account
         try {
+            // 1. Update settings for all targets
             await Promise.all(selectedAccounts.map(id => 
                 updateWorkspaceSettings(id, {
                     ...formData,
-                    drive_url: driveUrl
+                    drive_folder_link: driveUrl
                 })
             ))
+            
+            // 2. Trigger Auto-Drip scheduling
+            await createAutoDrip({
+                targets: selectedAccounts,
+                media_pool: foundVideos.map(v => v.id),
+                schedule_config: {
+                    timezone: formData.timezone,
+                    frequency: formData.limit,
+                    time_slots: formData.slots,
+                    comment_mode: 'none'
+                },
+                metadata_overrides: {
+                    mode: formData.title_mode === 'ai_auto' ? 'ai' : 'original',
+                    custom_description: formData.desc_template,
+                    tags: formData.tags,
+                    add_watermark: true
+                }
+            })
+
             navigate('/autopublish')
-        } catch (e) { console.error(e) }
+        } catch (e) { 
+            console.error(e)
+            alert('Failed to launch pipeline. Check console for details.')
+        }
     }
 
     return (
@@ -194,56 +246,204 @@ export default function WorkspaceWizard() {
 
                 {step === 3 && (
                     <div className="animate-in space-y-8">
-                        <div>
-                            <h2 className="text-lg font-bold text-white mb-1">AI Content Editor</h2>
-                            <p className="text-sm text-[#7a85b0]">Configure how AI generates content for your videos</p>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-black text-white mb-1">AI Content Editor</h2>
+                                <p className="text-sm text-[#7a85b0]">Branding, overlays, and smart formatting</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <div className="px-3 py-1 rounded-full bg-[#6c5ce720] text-[#6c5ce7] text-[10px] font-bold uppercase tracking-widest border border-[#6c5ce740]">Step 3/5</div>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Title Mode</label>
-                                    <select className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#6c5ce7]">
-                                        <option>🤖 AI Auto Generate</option>
-                                        <option>📝 Use File Name</option>
-                                    </select>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                            {/* Left: Metadata & Branding */}
+                            <div className="lg:col-span-7 space-y-8">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Title Mode</label>
+                                        <select 
+                                            value={formData.title_mode}
+                                            onChange={(e) => setFormData({...formData, title_mode: e.target.value})}
+                                            className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
+                                        >
+                                            <option value="ai_auto">🤖 AI Auto Generate</option>
+                                            <option value="filename">📝 Use File Name</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Output Size</label>
+                                        <select 
+                                            value={formData.format}
+                                            onChange={(e) => setFormData({...formData, format: e.target.value})}
+                                            className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
+                                        >
+                                            <option value="9:16">📱 Vertical (Reel/Short) 9:16</option>
+                                            <option value="16:9">📺 Landscape (Standard) 16:9</option>
+                                            <option value="1:1">⬜ Square (Post) 1:1</option>
+                                            <option value="4:5">📸 Portrait (IG Feed) 4:5</option>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Description Template</label>
-                                    <textarea 
-                                        className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] h-32 resize-none"
-                                        value={formData.desc_template}
-                                        onChange={(e) => setFormData({...formData, desc_template: e.target.value})}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Default Tags</label>
-                                    <input className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#6c5ce7]" value={formData.tags} />
+
+                                <div className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Video Text Overlay</label>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text"
+                                                placeholder="Add text to video... (e.g. Subscribe Now!)"
+                                                className="flex-1 bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
+                                                value={formData.overlay_text}
+                                                onChange={(e) => setFormData({...formData, overlay_text: e.target.value})}
+                                            />
+                                            <input 
+                                                type="color"
+                                                className="w-12 h-12 rounded-xl bg-white/5 border border-white/5 p-1 cursor-pointer"
+                                                value={formData.text_color}
+                                                onChange={(e) => setFormData({...formData, text_color: e.target.value})}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[12px] font-bold text-white flex items-center gap-2">
+                                                <Layout size={16} className="text-[#6c5ce7]" /> Logo & Text Position
+                                            </div>
+                                            <button 
+                                                className="text-[10px] text-[#6c5ce7] font-bold hover:underline"
+                                                onClick={() => document.getElementById('logo-up').click()}
+                                            >
+                                                UPLOAD LOGO
+                                            </button>
+                                            <input 
+                                                type="file" id="logo-up" className="hidden" accept="image/*"
+                                                onChange={(e) => {
+                                                    const file = e.target.files[0]
+                                                    if (file) setFormData({...formData, logo_url: URL.createObjectURL(file)})
+                                                }}
+                                            />
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="text-[9px] text-[#3d4666] font-bold uppercase mb-2 block">Logo Position</label>
+                                                <div className="grid grid-cols-3 gap-1">
+                                                    {['TL', 'TC', 'TR', 'ML', 'C', 'MR', 'BL', 'BC', 'BR'].map(p => (
+                                                        <button 
+                                                            key={p} 
+                                                            onClick={() => setFormData({...formData, watermark_pos: p})}
+                                                            className={clsx(
+                                                                "p-2 text-center text-[9px] font-black rounded-lg border transition-all",
+                                                                formData.watermark_pos === p ? "border-[#6c5ce7] bg-[#6c5ce715] text-[#6c5ce7]" : "border-white/5 bg-[#131829] text-[#3d4666]"
+                                                            )}
+                                                        >
+                                                            {p}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] text-[#3d4666] font-bold uppercase mb-2 block">Text Position</label>
+                                                <div className="grid grid-cols-3 gap-1">
+                                                    {['TL', 'TC', 'TR', 'ML', 'C', 'MR', 'BL', 'BC', 'BR'].map(p => (
+                                                        <button 
+                                                            key={p} 
+                                                            onClick={() => setFormData({...formData, text_pos: p})}
+                                                            className={clsx(
+                                                                "p-2 text-center text-[9px] font-black rounded-lg border transition-all",
+                                                                formData.text_pos === p ? "border-[#00b894] bg-[#00b89415] text-[#00b894]" : "border-white/5 bg-[#131829] text-[#3d4666]"
+                                                            )}
+                                                        >
+                                                            {p}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Video Format Preset</label>
-                                    <select className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#6c5ce7]">
-                                        <option>📺 YouTube 16:9 (1920×1080)</option>
-                                        <option>📱 Instagram Reel 9:16 (1080×1920)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Watermark Position</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {['↖ TL', '↑ TC', '↗ TR', '← ML', '⊙ C', '→ MR', '↙ BL', '↓ BC', '↘ BR'].map(p => (
-                                            <div 
-                                                key={p} 
-                                                onClick={() => setFormData({...formData, watermark_pos: p.split(' ')[1]})}
-                                                className={clsx(
-                                                    "p-2 text-center text-[11px] rounded-lg border transition-all cursor-pointer",
-                                                    formData.watermark_pos === p.split(' ')[1] ? "border-[#6c5ce7] bg-[#6c5ce71a] text-white" : "border-white/5 bg-[#131829] text-[#7a85b0]"
-                                                )}
-                                            >
-                                                {p}
+
+                            {/* Right: Dynamic Real-time Preview */}
+                            <div className="lg:col-span-5 space-y-6">
+                                <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Live Frame Preview</label>
+                                <div className="flex items-center justify-center min-h-[450px] bg-black/20 rounded-[40px] border border-white/5 p-4">
+                                    <div 
+                                        className="relative bg-[#131829] rounded-2xl shadow-2xl overflow-hidden group cursor-crosshair border border-white/10"
+                                        style={{ 
+                                            aspectRatio: formData.format.replace(':', '/'),
+                                            width: formData.format === '9:16' ? '250px' : '100%',
+                                            maxWidth: '400px'
+                                        }}
+                                        onClick={(e) => {
+                                            // Optional: advanced quadrant detection
+                                            const rect = e.currentTarget.getBoundingClientRect()
+                                            const x = (e.clientX - rect.left) / rect.width
+                                            const y = (e.clientY - rect.top) / rect.height
+                                            
+                                            let h = 'C', v = 'M'
+                                            if (x < 0.33) h = 'L'; else if (x > 0.66) h = 'R'; else h = 'C'
+                                            if (y < 0.33) v = 'T'; else if (y > 0.66) v = 'B'; else v = 'M'
+                                            
+                                            const pos = v === 'M' && h === 'C' ? 'C' : v + h
+                                            setFormData({...formData, watermark_pos: pos})
+                                        }}
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-br from-[#131829] to-[#1e273e]" />
+                                        
+                                        {/* Logo Rendering */}
+                                        <div className={clsx(
+                                            "absolute p-4 transition-all duration-300",
+                                            formData.watermark_pos === 'TL' && "top-0 left-0",
+                                            formData.watermark_pos === 'TC' && "top-0 left-1/2 -translate-x-1/2",
+                                            formData.watermark_pos === 'TR' && "top-0 right-0",
+                                            formData.watermark_pos === 'ML' && "top-1/2 left-0 -translate-y-1/2",
+                                            formData.watermark_pos === 'C' && "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+                                            formData.watermark_pos === 'MR' && "top-1/2 right-0 -translate-y-1/2",
+                                            formData.watermark_pos === 'BL' && "bottom-0 left-0",
+                                            formData.watermark_pos === 'BC' && "bottom-0 left-1/2 -translate-x-1/2",
+                                            formData.watermark_pos === 'BR' && "bottom-0 right-0"
+                                        )}>
+                                            {formData.logo_url ? (
+                                                <img src={formData.logo_url} className="w-12 h-12 object-contain rounded-lg shadow-xl" alt="Logo" />
+                                            ) : (
+                                                <div className="w-12 h-12 bg-[#6c5ce740] backdrop-blur-md border border-[#6c5ce740] rounded-lg flex items-center justify-center text-[8px] font-black text-white">LOGO</div>
+                                            )}
+                                        </div>
+
+                                        {/* Text Overlay Rendering */}
+                                        {formData.overlay_text && (
+                                            <div className={clsx(
+                                                "absolute p-6 transition-all duration-300 whitespace-nowrap",
+                                                formData.text_pos === 'TL' && "top-0 left-0",
+                                                formData.text_pos === 'TC' && "top-0 left-1/2 -translate-x-1/2",
+                                                formData.text_pos === 'TR' && "top-0 right-0",
+                                                formData.text_pos === 'ML' && "top-1/2 left-0 -translate-y-1/2",
+                                                formData.text_pos === 'C' && "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
+                                                formData.text_pos === 'MR' && "top-1/2 right-0 -translate-y-1/2",
+                                                formData.text_pos === 'BL' && "bottom-0 left-0",
+                                                formData.text_pos === 'BC' && "bottom-0 left-1/2 -translate-x-1/2",
+                                                formData.text_pos === 'BR' && "bottom-0 right-0"
+                                            )}>
+                                                <span 
+                                                    className="px-3 py-1 rounded-lg bg-black/40 backdrop-blur-sm font-bold text-[14px] shadow-lg border border-white/5"
+                                                    style={{ color: formData.text_color }}
+                                                >
+                                                    {formData.overlay_text}
+                                                </span>
                                             </div>
-                                        ))}
+                                        )}
+
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <Play size={40} className="text-white/5" />
+                                        </div>
                                     </div>
+                                </div>
+                                <div className="text-center">
+                                    <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-1">Interactive Preview</div>
+                                    <div className="text-[9px] text-[#3d4666]">CLICK ON FRAME TO POSITION LOGO</div>
                                 </div>
                             </div>
                         </div>
@@ -346,10 +546,10 @@ export default function WorkspaceWizard() {
                                 <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Pipeline Summary</label>
                                 <div className="space-y-3">
                                     {[
-                                        { l: 'Videos Found', v: '18' },
+                                        { l: 'Videos Found', v: foundVideos.length || '0' },
                                         { l: 'Daily Slots', v: `${formData.slots.length} per day` },
                                         { l: 'Timezone', v: formData.timezone },
-                                        { l: 'Est. Duration', v: `${Math.ceil(18/formData.slots.length)} days` }
+                                        { l: 'Est. Duration', v: `${Math.ceil((foundVideos.length || 1)/formData.slots.length)} days` }
                                     ].map(item => (
                                         <div key={item.l} className="flex justify-between items-center text-[13px]">
                                             <span className="text-[#7a85b0]">{item.l}</span>

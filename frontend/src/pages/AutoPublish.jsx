@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchAccounts, triggerPipeline, syncAccountNow } from '../lib/api'
+import { fetchAccounts, triggerPipeline, syncAccountNow, instantPost } from '../lib/api'
 import { 
     Zap, RefreshCw, CheckCircle2, XCircle, Clock, 
     Youtube, Facebook, Instagram, Play, Send 
@@ -19,6 +19,14 @@ export default function AutoPublish() {
     }
 
     useEffect(() => { loadData() }, [])
+
+    const handleAction = async (action, id) => {
+        try {
+            if (action === 'sync') await syncAccountNow(id)
+            if (action === 'run' || action === 'instant') await instantPost(id)
+            loadData()
+        } catch (e) { console.error(e) }
+    }
 
     return (
         <div className="space-y-6 animate-in">
@@ -41,20 +49,28 @@ export default function AutoPublish() {
             {/* ── Stats Grid ────────────────────────────────────────── */}
             <div className="sg4">
                 <div className="sc">
-                    <div className="sv" style={{ background: 'var(--g3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '22px' }}>18</div>
-                    <div className="sl text-[10px] font-bold uppercase tracking-wider">Published Today</div>
+                    <div className="sv" style={{ background: 'var(--g3)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '22px' }}>
+                        {accounts.reduce((acc, a) => acc + (a.stats?.published || 0), 0)}
+                    </div>
+                    <div className="sl text-[10px] font-bold uppercase tracking-wider">Published Total</div>
                 </div>
                 <div className="sc">
-                    <div className="sv" style={{ background: 'var(--g4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '22px' }}>112</div>
+                    <div className="sv" style={{ background: 'var(--g4)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '22px' }}>
+                        {accounts.reduce((acc, a) => acc + (a.stats?.pending || 0), 0)}
+                    </div>
                     <div className="sl text-[10px] font-bold uppercase tracking-wider">Pending Queue</div>
                 </div>
                 <div className="sc">
-                    <div className="sv" style={{ color: 'var(--red)', fontSize: '22px' }}>6</div>
+                    <div className="sv" style={{ color: 'var(--red)', fontSize: '22px' }}>
+                        {accounts.reduce((acc, a) => acc + (a.stats?.failed || 0), 0)}
+                    </div>
                     <div className="sl text-[10px] font-bold uppercase tracking-wider">Failed (retry)</div>
                 </div>
                 <div className="sc">
-                    <div className="sv" style={{ background: 'var(--g2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '22px' }}>4</div>
-                    <div className="sl text-[10px] font-bold uppercase tracking-wider">Active Pipelines</div>
+                    <div className="sv" style={{ background: 'var(--g2)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '22px' }}>
+                        {accounts.filter(a => a.status === 'active').length}
+                    </div>
+                    <div className="sl text-[10px] font-bold uppercase tracking-wider">Active Platforms</div>
                 </div>
             </div>
 
@@ -83,10 +99,10 @@ export default function AutoPublish() {
                         <div className="p-4 space-y-4">
                             <div className="grid grid-cols-4 gap-2">
                                 {[
-                                    { l: 'Pub', v: 42, g: 'var(--g3)' },
-                                    { l: 'Pend', v: 18, g: 'var(--g4)' },
-                                    { l: 'Fail', v: 0, c: '#3d4666' },
-                                    { l: 'Queue', v: 12, g: 'var(--g2)' }
+                                    { l: 'Pub', v: account.stats?.published || 0, g: 'var(--g3)' },
+                                    { l: 'Pend', v: account.stats?.pending || 0, g: 'var(--g4)' },
+                                    { l: 'Fail', v: account.stats?.failed || 0, c: '#3d4666' },
+                                    { l: 'Queue', v: account.stats?.queue || 0, g: 'var(--g2)' }
                                 ].map((s, i) => (
                                     <div key={i} className="bg-[#131829] rounded-lg p-2 text-center">
                                         <div className="text-[14px] font-bold" style={s.g ? { background: s.g, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' } : { color: s.c }}>{s.v}</div>
@@ -96,25 +112,25 @@ export default function AutoPublish() {
                             </div>
 
                             <div className="bg-[#131829] rounded-xl py-2 px-3 text-center text-[11px] text-[#7a85b0]">
-                                ⏰ Next publish: <b className="text-white ml-1">2h 15m</b>
+                                ⏰ Next publish: <b className="text-white ml-1">{account.stats?.next_at || 'Soon'}</b>
                             </div>
 
                             <div className="flex gap-1.5">
-                                <button className="flex-1 btn btn-o !p-2 text-[11px] gap-1.5 hover:text-[#00b894] hover:border-[#00b894]">
+                                <button onClick={() => handleAction('run', account.id)} className="flex-1 btn btn-o !p-2 text-[11px] gap-1.5 hover:text-[#00b894] hover:border-[#00b894]">
                                     <Play size={12} /> Publish Now
                                 </button>
-                                <button className="flex-1 btn btn-o !p-2 text-[11px] gap-1.5 hover:text-[#00cec9] hover:border-[#00cec9]">
+                                <button onClick={() => handleAction('sync', account.id)} className="flex-1 btn btn-o !p-2 text-[11px] gap-1.5 hover:text-[#00cec9] hover:border-[#00cec9]">
                                     <RefreshCw size={12} /> Sync
                                 </button>
-                                <button className="flex-1 btn btn-o !p-2 text-[11px] gap-1.5 hover:text-[#fdcb6e] hover:border-[#fdcb6e]">
+                                <button onClick={() => handleAction('instant', account.id)} className="flex-1 btn btn-o !p-2 text-[11px] gap-1.5 hover:text-[#fdcb6e] hover:border-[#fdcb6e]">
                                     <Send size={12} /> Instant
                                 </button>
                             </div>
                         </div>
 
                         <div className="p-3 border-t border-white/5 flex justify-between items-center text-[11px] text-[#3d4666]">
-                            <div>Drive videos: <span className="text-[#7a85b0] font-bold">18 ready</span></div>
-                            <div>Last sync: 5m ago</div>
+                            <div>Drive videos: <span className="text-[#7a85b0] font-bold">{(account.drive_videos || []).length} ready</span></div>
+                            <div>Last sync: {account.stats?.last_sync || 'Just now'}</div>
                         </div>
                     </div>
                 ))}

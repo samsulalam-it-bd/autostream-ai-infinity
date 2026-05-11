@@ -55,6 +55,7 @@ class Account(Base):
     channel_name = Column(String(255), nullable=False)
     channel_id = Column(String(255), nullable=True, index=True)
     group_id = Column(UUID(as_uuid=True), ForeignKey("channel_groups.id"), nullable=True, index=True)
+    vault_id = Column(UUID(as_uuid=True), ForeignKey("api_key_vault.id"), nullable=True, index=True)
     # Tokens stored encrypted using Fernet
     encrypted_access_token = Column(Text, nullable=True)
     encrypted_refresh_token = Column(Text, nullable=True)
@@ -73,13 +74,14 @@ class Account(Base):
     upload_schedules = relationship("UploadSchedule", back_populates="account")
     comment_rules = relationship("CommentRule", back_populates="account")
     comment_logs = relationship("CommentLog", back_populates="account")
+    api_vault_key = relationship("ApiKeyVault")
 
 
 class ApiKeyVault(Base):
     __tablename__ = "api_key_vault"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    service_name = Column(String(100), nullable=False, index=True)  # google, meta
+    service_name = Column(String(100), nullable=False, index=True)  # google, meta, gemini
     project_name = Column(String(255), nullable=True)
     credentials_json = Column(JSONB, nullable=False)  # Stores the full GCP service account JSON
     daily_usage = Column(Integer, default=0)

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard, Users, KeyRound, Upload, Terminal,
@@ -5,29 +6,50 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 
-const NAV_ITEMS = [
-    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', section: 'Main' },
-    { to: '/accounts', icon: Users, label: 'Channels', badge: '6', section: 'Main' },
-    { to: '/autopublish', icon: Zap, label: 'Auto Publish', section: 'Main' },
-    { to: '/upload', icon: Upload, label: 'Upload Zone', section: 'Main' },
-    { to: '/wizard', icon: Wand2, label: 'Upload Wizard', section: 'Tools' },
-    { to: '/api-vault', icon: KeyRound, label: 'API Vault', section: 'Tools' },
-    { to: '/engagement', icon: BotMessageSquare, label: 'AI Assistant', section: 'Tools' },
-    { to: '/logs', icon: Terminal, label: 'Live Logs', badge: '3', badgeColor: 'bg-orange-500', section: 'Monitor' },
-    { to: '/system-health', icon: HeartPulse, label: 'System Health', section: 'Monitor' },
-]
+import { fetchAccounts, fetchLogs } from '../lib/api'
 
 export default function Layout() {
     const location = useLocation();
+    const [counts, setCounts] = useState({ accounts: 0, logs: 0 });
+
+    useEffect(() => {
+        const updateCounts = async () => {
+            try {
+                const [accRes, logRes] = await Promise.all([
+                    fetchAccounts(),
+                    fetchLogs(1)
+                ]);
+                setCounts({
+                    accounts: Array.isArray(accRes.data) ? accRes.data.length : 0,
+                    logs: Array.isArray(logRes.data) ? logRes.data.length : 0
+                });
+            } catch (e) { console.error(e) }
+        };
+        updateCounts();
+        const interval = setInterval(updateCounts, 30000);
+        return () => clearInterval(interval);
+    }, []);
+    
+    const NAV_ITEMS = [
+        { to: '/overview', icon: LayoutDashboard, label: 'Dashboard', section: 'Main' },
+        { to: '/accounts', icon: Users, label: 'Channels', badge: counts.accounts.toString(), section: 'Main' },
+        { to: '/autopublish', icon: Zap, label: 'Auto Publish', section: 'Main' },
+        { to: '/upload', icon: Upload, label: 'Upload Zone', section: 'Main' },
+        { to: '/wizard', icon: Wand2, label: 'Upload Wizard', section: 'Tools' },
+        { to: '/vault', icon: KeyRound, label: 'API Vault', section: 'Tools' },
+        { to: '/engagement', icon: BotMessageSquare, label: 'AI Assistant', section: 'Tools' },
+        { to: '/logs', icon: Terminal, label: 'Live Logs', badge: counts.logs > 0 ? counts.logs.toString() : null, badgeColor: 'bg-orange-500', section: 'Monitor' },
+        { to: '/system-health', icon: HeartPulse, label: 'System Health', section: 'Monitor' },
+    ]
     
     // Map path to titles like in the provided HTML
     const TITLES = {
-        '/dashboard': 'Dashboard',
+        '/overview': 'Dashboard',
         '/accounts': 'Channels',
         '/autopublish': 'Auto Publish',
         '/upload': 'Upload Zone',
         '/wizard': 'Upload Wizard',
-        '/api-vault': 'API Vault',
+        '/vault': 'API Vault',
         '/engagement': 'AI Assistant',
         '/logs': 'Live Logs',
         '/system-health': 'System Health'
@@ -86,7 +108,7 @@ export default function Layout() {
                             <div className="w-2 h-2 rounded-full bg-[#00b894] shadow-[0_0_8px_#00b894]" />
                             <span className="text-[11px] text-[#00b894] font-bold">System Online</span>
                         </div>
-                        <div className="text-[10px] text-[#3d4666] mt-1">6 containers running</div>
+                        <div className="text-[10px] text-[#3d4666] mt-1">{counts.accounts} channels active</div>
                     </div>
                 </div>
             </aside>
@@ -102,8 +124,11 @@ export default function Layout() {
                             <div className="w-1.5 h-1.5 rounded-full bg-[#00b894] animate-pulse" />
                             Auto Publish Active
                         </div>
-                        <button className="text-[12px] text-[#7a85b0] hover:text-white bg-transparent border border-white/10 px-3 py-1.5 rounded-xl transition-all">
-                            <RefreshCw className="w-3.5 h-3.5 inline mr-1.5" /> Refresh
+                        <button 
+                            onClick={() => window.location.reload()}
+                            className="text-[12px] text-[#7a85b0] hover:text-white bg-transparent border border-white/10 px-3 py-1.5 rounded-xl transition-all group"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5 inline mr-1.5 group-active:animate-spin" /> Refresh
                         </button>
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#6c5ce7] to-[#e84393] flex items-center justify-center text-xs font-bold text-white shadow-glow-brand cursor-pointer">
                             A

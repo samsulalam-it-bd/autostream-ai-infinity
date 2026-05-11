@@ -55,7 +55,38 @@ async def list_accounts(
     if group_id:
         query = query.where(Account.group_id == group_id)
     result = await db.execute(query)
-    return result.scalars().all()
+    accounts = result.scalars().all()
+
+    from app.models.models import UploadSchedule
+    from sqlalchemy import func
+    enriched = []
+    now = datetime.now(timezone.utc)
+    for acc in accounts:
+        # Published count
+        pub_res = await db.execute(select(func.count(UploadSchedule.id)).where(
+            UploadSchedule.account_id == acc.id, UploadSchedule.is_published == True
+        ))
+        # Pending count
+        pen_res = await db.execute(select(func.count(UploadSchedule.id)).where(
+            UploadSchedule.account_id == acc.id, UploadSchedule.is_published == False, UploadSchedule.error_message == None, UploadSchedule.scheduled_time >= now
+        ))
+        # Failed count
+        fail_res = await db.execute(select(func.count(UploadSchedule.id)).where(
+            UploadSchedule.account_id == acc.id, UploadSchedule.error_message != None
+        ))
+        # Queue (Total pending regardless of time)
+        que_res = await db.execute(select(func.count(UploadSchedule.id)).where(
+            UploadSchedule.account_id == acc.id, UploadSchedule.is_published == False
+        ))
+
+        acc.stats = {
+            'published': pub_res.scalar() or 0,
+            'pending': pen_res.scalar() or 0,
+            'failed': fail_res.scalar() or 0,
+            'queue': que_res.scalar() or 0
+        }
+        enriched.append(acc)
+    return enriched
 
 
 @router.post("/", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
@@ -117,27 +148,47 @@ async def delete_account(account_id: uuid.UUID, db: AsyncSession = Depends(get_d
 
 # ── OAuth Redirect Stubs ───────────────────────────────────────────────────
 @router.get("/oauth/google/init")
-async def google_oauth_init():
-    """Returns the Google OAuth authorization URL for the frontend to redirect to."""
+async def google_oauth_init(vault_id: Optional[uuid.UUID] = None, db: AsyncSession = Depends(get_db)):
+    """Returns the Google OAuth authorization URL. Picks an active project from the vault for rotation."""
     from app.core.config import settings
+    from app.services.api_rotation import get_google_client_config
     import urllib.parse
+    
+    # Rotation: Try to get a client from the vault
+    if vault_id:
+        result = await db.execute(select(ApiKeyVault).where(ApiKeyVault.id == vault_id))
+        key = result.scalar_one_or_none()
+        if not key: raise HTTPException(status_code=404, detail="Vault project not found")
+        creds = key.credentials_json
+        inner = creds.get("installed") or creds.get("web") or creds
+        client_id = inner.get("client_id")
+        v_id = key.id
+    else:
+        config = await get_google_client_config(db)
+        if config:
+            client_id = config["client_id"]
+            v_id = config["vault_id"]
+        else:
+            # Fallback to .env if vault is empty
+            client_id = settings.GOOGLE_CLIENT_ID
+            v_id = None
+
     scopes = [
         "https://www.googleapis.com/auth/youtube.upload",
         "https://www.googleapis.com/auth/youtube.readonly",
         "https://www.googleapis.com/auth/drive.readonly",
         "https://www.googleapis.com/auth/drive.file",
-        # Needed for reliably deleting source files from Drive after publishing
-        # (drive.file is often not sufficient for arbitrary user files).
         "https://www.googleapis.com/auth/drive",
         "openid", "email", "profile",
     ]
     params = {
-        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_id": client_id,
         "redirect_uri": settings.GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": " ".join(scopes),
         "access_type": "offline",
         "prompt": "consent",
+        "state": str(v_id) if v_id else "env"
     }
     base = "https://accounts.google.com/o/oauth2/v2/auth"
     url = f"{base}?{urllib.parse.urlencode(params)}"
@@ -145,17 +196,33 @@ async def google_oauth_init():
 
 
 @router.get("/oauth/google/callback")
-async def google_oauth_callback(code: str, db: AsyncSession = Depends(get_db)):
-    """Handle Google OAuth callback, exchange code for tokens."""
+async def google_oauth_callback(code: str, state: str, db: AsyncSession = Depends(get_db)):
+    """Handle Google OAuth callback. Uses the vault_id from state to exchange tokens."""
     import httpx
     from app.core.config import settings
+
+    # Resolve Client ID/Secret from state
+    if state and state != "env":
+        v_id = uuid.UUID(state)
+        result = await db.execute(select(ApiKeyVault).where(ApiKeyVault.id == v_id))
+        key = result.scalar_one_or_none()
+        if not key: raise HTTPException(status_code=400, detail="Invalid vault state")
+        creds = key.credentials_json
+        inner = creds.get("installed") or creds.get("web") or creds
+        client_id = inner.get("client_id")
+        client_secret = inner.get("client_secret")
+        vault_id = v_id
+    else:
+        client_id = settings.GOOGLE_CLIENT_ID
+        client_secret = settings.GOOGLE_CLIENT_SECRET
+        vault_id = None
 
     token_url = "https://oauth2.googleapis.com/token"
     async with httpx.AsyncClient() as client:
         resp = await client.post(token_url, data={
             "code": code,
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "redirect_uri": settings.GOOGLE_REDIRECT_URI,
             "grant_type": "authorization_code",
         })
@@ -164,7 +231,6 @@ async def google_oauth_callback(code: str, db: AsyncSession = Depends(get_db)):
 
     access_token = token_data.get("access_token", "")
     refresh_token = token_data.get("refresh_token", "")
-    # Use expires_in from Google response (don't hardcode 3600)
     expires_in = int(token_data.get("expires_in", 3600))
     token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
@@ -185,14 +251,13 @@ async def google_oauth_callback(code: str, db: AsyncSession = Depends(get_db)):
     avatar_url = snippet.get("thumbnails", {}).get("default", {}).get("url")
     subscribers = int(stats.get("subscriberCount", 0))
 
-    # Check if this channel already exists (avoid duplicates on re-auth)
+    # Check existing
     existing_result = await db.execute(
         select(Account).where(Account.channel_id == channel_id, Account.platform == PlatformEnum.YOUTUBE)
     )
     existing_account = existing_result.scalar_one_or_none()
 
     if existing_account:
-        # Update tokens on re-authentication
         existing_account.encrypted_access_token = encrypt_token(access_token)
         if refresh_token:
             existing_account.encrypted_refresh_token = encrypt_token(refresh_token)
@@ -200,7 +265,7 @@ async def google_oauth_callback(code: str, db: AsyncSession = Depends(get_db)):
         existing_account.status = AccountStatusEnum.ACTIVE
         existing_account.subscriber_count = subscribers
         existing_account.avatar_url = avatar_url
-        logger.info(f"Re-authenticated existing account: {channel_name}")
+        existing_account.vault_id = vault_id
     else:
         account = Account(
             platform=PlatformEnum.YOUTUBE,
@@ -212,34 +277,48 @@ async def google_oauth_callback(code: str, db: AsyncSession = Depends(get_db)):
             avatar_url=avatar_url,
             subscriber_count=subscribers,
             status=AccountStatusEnum.ACTIVE,
+            vault_id=vault_id
         )
         db.add(account)
-        logger.info(f"New account added: {channel_name}")
 
     await db.commit()
-    # Redirect to frontend
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="http://localhost:5173/accounts?success=true&platform=youtube")
 
 
 @router.get("/oauth/meta/init")
-async def meta_oauth_init():
-    """Returns the Meta (Facebook/Instagram) OAuth authorization URL."""
+async def meta_oauth_init(vault_id: Optional[uuid.UUID] = None, db: AsyncSession = Depends(get_db)):
+    """Returns the Meta OAuth authorization URL. Picks an active app from the vault for rotation."""
     from app.core.config import settings
+    from app.services.api_rotation import get_meta_app_config
     import urllib.parse
-    # NOTE:
-    # If you request permissions that are NOT enabled/approved in Meta console,
-    # Facebook may show "Invalid Scopes" and block login.
-    # So we keep scopes configurable via META_SCOPES in .env.
+    
+    if vault_id:
+        result = await db.execute(select(ApiKeyVault).where(ApiKeyVault.id == vault_id))
+        key = result.scalar_one_or_none()
+        if not key: raise HTTPException(status_code=404, detail="Vault app not found")
+        client_id = key.credentials_json.get("app_id")
+        v_id = key.id
+    else:
+        config = await get_meta_app_config(db)
+        if config:
+            client_id = config["app_id"]
+            v_id = config["vault_id"]
+        else:
+            client_id = settings.META_CLIENT_ID
+            v_id = None
+
     scopes = [s.strip() for s in (settings.META_SCOPES or "").split(",") if s.strip()]
     if not scopes:
-        scopes = ["public_profile", "pages_show_list"]
+        scopes = ["public_profile", "pages_show_list", "pages_read_engagement", "pages_manage_posts"]
+    
     params = {
-        "client_id": settings.META_CLIENT_ID,
+        "client_id": client_id,
         "redirect_uri": settings.META_REDIRECT_URI,
         "response_type": "code",
         "auth_type": "rerequest",
         "scope": ",".join(scopes),
+        "state": str(v_id) if v_id else "env"
     }
     base = "https://www.facebook.com/v19.0/dialog/oauth"
     url = f"{base}?{urllib.parse.urlencode(params)}"
@@ -247,37 +326,47 @@ async def meta_oauth_init():
 
 
 @router.get("/oauth/meta/callback")
-async def meta_oauth_callback(code: str, db: AsyncSession = Depends(get_db)):
-    """Handle Meta OAuth callback, exchange code for user access token, then get page tokens."""
+async def meta_oauth_callback(code: str, state: str, db: AsyncSession = Depends(get_db)):
+    """Handle Meta OAuth callback. Uses the vault_id from state to exchange tokens."""
     import httpx
     from app.core.config import settings
     from fastapi.responses import RedirectResponse
 
-    # 1. Exchange code for short-lived user access token
+    # Resolve
+    if state and state != "env":
+        v_id = uuid.UUID(state)
+        result = await db.execute(select(ApiKeyVault).where(ApiKeyVault.id == v_id))
+        key = result.scalar_one_or_none()
+        if not key: raise HTTPException(status_code=400, detail="Invalid vault state")
+        client_id = key.credentials_json.get("app_id")
+        client_secret = key.credentials_json.get("app_secret")
+        vault_id = v_id
+    else:
+        client_id = settings.META_CLIENT_ID
+        client_secret = settings.META_CLIENT_SECRET
+        vault_id = None
+
+    # 1. Exchange code
     token_url = "https://graph.facebook.com/v19.0/oauth/access_token"
     async with httpx.AsyncClient() as client:
         resp = await client.get(token_url, params={
-            "client_id": settings.META_CLIENT_ID,
-            "client_secret": settings.META_CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "redirect_uri": settings.META_REDIRECT_URI,
             "code": code,
         })
-        if resp.status_code != 200:
-            logger.error(f"Meta token exchange failed: {resp.text}")
-            raise HTTPException(status_code=400, detail="Failed to exchange token")
-        token_data = resp.json()
-        short_lived_token = token_data.get("access_token")
+        resp.raise_for_status()
+        short_lived_token = resp.json().get("access_token")
 
-    # 2. Exchange short-lived token for long-lived user token
+    # 2. Long-lived token
     async with httpx.AsyncClient() as client:
         ll_resp = await client.get(token_url, params={
             "grant_type": "fb_exchange_token",
-            "client_id": settings.META_CLIENT_ID,
-            "client_secret": settings.META_CLIENT_SECRET,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "fb_exchange_token": short_lived_token,
         })
-        ll_data = ll_resp.json()
-        long_lived_token = ll_data.get("access_token", short_lived_token)
+        long_lived_token = ll_resp.json().get("access_token", short_lived_token)
 
     # 3. Fetch managed Pages (which includes FB Pages and linked IG Accounts)
     async with httpx.AsyncClient() as client:
