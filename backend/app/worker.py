@@ -537,7 +537,9 @@ def process_and_upload_video(self, schedule_id: str):
 
                 # ── Optional: Delete source file from Google Drive ─────────────
                 from app.core.config import settings
-                if settings.DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH:
+                should_delete = overrides.get("delete_from_drive", settings.DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH)
+                
+                if should_delete:
                     try:
                         # Uses the Drive token used for download step.
                         await delete_drive_file(video.drive_file_id, drive_access_token)

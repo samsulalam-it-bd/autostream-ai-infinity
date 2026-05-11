@@ -31,13 +31,15 @@ export default function WorkspaceWizard() {
     // Form State
     const [formData, setFormData] = useState({
         title_mode: 'ai_auto',
+        format: '9:16',
+        overlay_text: '',
+        text_pos: 'BC',
+        text_color: '#ffffff',
+        logo_url: '',
+        watermark_pos: 'TR',
+        delete_from_drive: false,
         desc_template: 'Check out our latest content! 🔥 Subscribe for more amazing videos every day!\n\n#autostream #viral #subscribe',
         tags: '#autostream #viral #trending #youtube #2026',
-        format: '9:16',
-        watermark_pos: 'BR',
-        overlay_text: '',
-        text_pos: 'TC',
-        text_color: '#ffffff',
         watermark_opacity: 0.8,
         watermark_size: 15,
         logo_url: null,
@@ -260,17 +262,32 @@ export default function WorkspaceWizard() {
                             </div>
                         </div>
                         {(isSyncing || syncProgress > 0) && (
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs text-[#7a85b0]">
-                                    <span>Scanning Drive folder...</span>
-                                    <span>{syncProgress}%</span>
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-xs text-[#7a85b0]">
+                                        <span>Scanning Drive folder...</span>
+                                        <span>{syncProgress}%</span>
+                                    </div>
+                                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                        <div className="h-full bg-gradient-to-r from-[#6c5ce7] to-[#e84393] transition-all" style={{ width: `${syncProgress}%` }} />
+                                    </div>
                                 </div>
-                                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-gradient-to-r from-[#6c5ce7] to-[#e84393] transition-all" style={{ width: `${syncProgress}%` }} />
-                                </div>
-                                {syncProgress === 100 && (
-                                    <div className="text-[#00b894] text-xs font-bold flex items-center gap-1.5 animate-in">
-                                        <Check size={14} /> Found 18 videos ready to process!
+
+                                {foundVideos.length > 0 && (
+                                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                        <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-3">Detected Media</div>
+                                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                                            {foundVideos.map(v => (
+                                                <div key={v.id} className="aspect-square bg-[#131829] rounded-xl overflow-hidden border border-white/5 relative group">
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-[#6c5ce705]">
+                                                        <FileVideo size={20} className="text-[#3d4666] group-hover:text-[#6c5ce7] transition-colors" />
+                                                    </div>
+                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                                                        <div className="text-[8px] text-white truncate w-full font-medium">{v.original_filename}</div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </div>
