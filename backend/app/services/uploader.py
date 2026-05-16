@@ -263,17 +263,21 @@ async def upload_to_facebook(
 
 
 async def delete_drive_file(file_id: str, access_token: str):
-    """Deletes a file from Google Drive."""
+    """Moves a file to Google Drive trash instead of permanent deletion."""
     import httpx
     url = f"{GOOGLE_APIS_BASE}/drive/v3/files/{file_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.delete(url, headers=headers)
+            # Moving to trash is often more reliable and safer than permanent delete
+            response = await client.patch(url, headers=headers, json={"trashed": True})
             response.raise_for_status()
-            logger.info(f"Successfully deleted temporary Drive file: {file_id}")
+            logger.info(f"Successfully moved Drive file to trash: {file_id}")
     except Exception as e:
-        logger.error(f"Failed to delete temporary Drive file {file_id}: {e}")
+        logger.error(f"Failed to trash Drive file {file_id}: {e}")
+        # Log more details if it's a 403 to help user understand it's a permission issue
+        if "403" in str(e):
+            logger.warning("Drive 403 Error: This usually means the Google Account needs to be re-connected with 'Drive Edit' permissions checked.")
 
 async def upload_to_drive_public(
     local_file_path: Path,

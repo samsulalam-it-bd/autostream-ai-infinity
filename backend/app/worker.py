@@ -623,10 +623,14 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
     Creates SourceVideo records for each video found (skips duplicates).
     """
     async def _sync():
-        from sqlalchemy import select
+        from sqlalchemy import select, and_, func
         from app.database import AsyncSessionLocal
-        from app.models.models import SourceVideo, Account, PlatformEnum, AccountStatusEnum
-        from app.services.uploader import list_drive_folder_videos, extract_folder_id_from_link
+        from app.models.models import Account, SourceVideo, VideoStatusEnum, UploadSchedule, PlatformEnum, AccountStatusEnum
+        from app.services.uploader import (
+            list_drive_folder_videos,
+            extract_folder_id_from_link,
+            read_drive_file_text,
+        )
         from app.services.token_service import get_valid_google_credentials, TokenRefreshError
 
         folder_id = extract_folder_id_from_link(folder_link)

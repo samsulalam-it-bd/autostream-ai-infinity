@@ -37,12 +37,12 @@ export default function WorkspaceWizard() {
         text_color: '#ffffff',
         logo_url: '',
         watermark_pos: 'TR',
+        add_watermark: true,
         delete_from_drive: false,
         desc_template: 'Check out our latest content! 🔥 Subscribe for more amazing videos every day!\n\n#autostream #viral #subscribe',
         tags: '#autostream #viral #trending #youtube #2026',
         watermark_opacity: 0.8,
         watermark_size: 15,
-        logo_url: null,
         timezone: 'Asia/Dhaka',
         days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
         limit: 3,
@@ -103,13 +103,19 @@ export default function WorkspaceWizard() {
                         // Small delay for smooth transition
                         setTimeout(async () => {
                             setIsSyncing(false)
-                            const vRes = await fetchVideos(null, true)
-                            setFoundVideos(vRes.data.slice(0, 18))
+                            // Fetch all recent videos (not just unassigned) to ensure the grid is populated
+                            const vRes = await fetchVideos(null, false)
+                            const videos = vRes.data.slice(0, 24)
+                            setFoundVideos(videos)
+                            
+                            if (videos.length === 0) {
+                                alert("No videos found in this folder or database. Please check your Drive link and permissions.")
+                            }
                         }, 500)
                     } else if (status === 'FAILURE' || status === 'REVOKED') {
                         clearInterval(pollInterval)
                         setIsSyncing(false)
-                        alert("Sync Failed. Please check logs.")
+                        alert("Sync Failed. Please check logs and ensure the folder is shared with your Google Account.")
                     } else {
                         // Increment progress slightly while waiting
                         setSyncProgress(prev => prev < 90 ? prev + 10 : prev)
@@ -126,31 +132,35 @@ export default function WorkspaceWizard() {
         }
     }
 
+    const canContinue = () => {
+        if (step === 1) return selectedAccounts.length > 0
+        if (step === 2) return foundVideos.length > 0
+        if (step === 3) return formData.desc_template.trim().length > 0
+        if (step === 4) return formData.slots.length > 0
+        return true
+    }
+
     const handleLaunch = async () => {
         try {
             // 1. Update settings for all targets
             await Promise.all(selectedAccounts.map(id =>
                 updateWorkspaceSettings(id, {
-                    ...formData,
-                    drive_folder_link: driveUrl
+                    drive_folder_link: driveUrl,
+                    automation_settings: formData
                 })
             ))
 
             // 2. Trigger Auto-Drip scheduling
             await createAutoDrip({
-                targets: selectedAccounts,
-                media_pool: foundVideos.map(v => v.id),
-                schedule_config: {
+                account_ids: selectedAccounts,
+                video_ids: foundVideos.map(v => v.id),
+                settings: {
                     timezone: formData.timezone,
-                    frequency: formData.limit,
                     time_slots: formData.slots,
-                    comment_mode: 'none'
-                },
-                metadata_overrides: {
                     mode: formData.title_mode === 'ai_auto' ? 'ai' : 'original',
                     custom_description: formData.desc_template,
                     tags: formData.tags,
-                    add_watermark: true
+                    add_watermark: formData.add_watermark
                 }
             })
 
@@ -273,9 +283,9 @@ export default function WorkspaceWizard() {
                                     </div>
                                 </div>
 
-                                {foundVideos.length > 0 && (
+                                {foundVideos.length > 0 ? (
                                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                                        <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-3">Detected Media</div>
+                                        <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-3">Detected Media ({foundVideos.length})</div>
                                         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
                                             {foundVideos.map(v => (
                                                 <div key={v.id} className="aspect-square bg-[#131829] rounded-xl overflow-hidden border border-white/5 relative group">
@@ -288,6 +298,12 @@ export default function WorkspaceWizard() {
                                                 </div>
                                             ))}
                                         </div>
+                                    </div>
+                                ) : syncProgress === 100 && (
+                                    <div className="py-10 text-center border border-dashed border-white/5 rounded-2xl bg-white/[0.02] animate-in">
+                                        <AlertCircle className="mx-auto text-[#ff7675] mb-2" size={24} />
+                                        <div className="text-[10px] font-bold text-white uppercase tracking-widest mb-1">No Videos Found</div>
+                                        <div className="text-[10px] text-[#7a85b0]">Try a different folder or check permissions</div>
                                     </div>
                                 )}
                             </div>
@@ -331,7 +347,44 @@ export default function WorkspaceWizard() {
                                         />
                                     </div>
                                 </div>
+
                                 <div className="grid grid-cols-2 gap-4">
+                                    {/* Logo Toggle */}
+                                    <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl flex items-center justify-between">
+                                        <div className="space-y-1">
+                                            <div className="text-[12px] font-bold text-white flex items-center gap-2">
+                                                <Layout size={16} className="text-[#6c5ce7]" /> Branding
+                                            </div>
+                                            <div className="text-[10px] text-[#3d4666]">Enable Logo / Watermark</div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setFormData({...formData, add_watermark: !formData.add_watermark})}
+                                            className={clsx(
+                                                "w-12 h-6 rounded-full transition-all relative p-1",
+                                                formData.add_watermark ? "bg-[#6c5ce7]" : "bg-white/10"
+                                            )}
+                                        >
+                                            <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.add_watermark ? "translate-x-6" : "translate-x-0")} />
+                                        </button>
+                                    </div>
+                                    <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl flex items-center justify-between">
+                                        <div className="space-y-1">
+                                            <div className="text-[12px] font-bold text-white flex items-center gap-2">
+                                                <Trash2 size={16} className="text-[#ff7675]" /> Storage
+                                            </div>
+                                            <div className="text-[10px] text-[#3d4666]">Delete from Drive after upload</div>
+                                        </div>
+                                        <button 
+                                            onClick={() => setFormData({...formData, delete_from_drive: !formData.delete_from_drive})}
+                                            className={clsx(
+                                                "w-12 h-6 rounded-full transition-all relative p-1",
+                                                formData.delete_from_drive ? "bg-[#ff7675]" : "bg-white/10"
+                                            )}
+                                        >
+                                            <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.delete_from_drive ? "translate-x-6" : "translate-x-0")} />
+                                        </button>
+                                    </div>
+
                                     <div className="space-y-2">
                                         <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Title Mode</label>
                                         <select
@@ -675,7 +728,12 @@ export default function WorkspaceWizard() {
                 </button>
                 <button
                     onClick={() => step === 5 ? handleLaunch() : setStep(s => s + 1)}
-                    className={clsx("btn", step === 5 ? "btn-g3" : "btn-g")}
+                    disabled={!canContinue()}
+                    className={clsx(
+                        "btn transition-all duration-300", 
+                        step === 5 ? "btn-g3" : "btn-g",
+                        !canContinue() && "opacity-50 cursor-not-allowed scale-95"
+                    )}
                 >
                     {step === 5 ? '🚀 Launch Pipeline' : 'Continue →'}
                 </button>
