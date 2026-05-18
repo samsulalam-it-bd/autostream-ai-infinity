@@ -257,13 +257,14 @@ def process_and_upload_video(self, schedule_id: str):
     async def _pipeline():
         from sqlalchemy import select
         from app.database import AsyncSessionLocal
-        from app.models.models import UploadSchedule, Account, SourceVideo, AccountStatusEnum, VideoStatusEnum
+        from app.models.models import UploadSchedule, Account, SourceVideo, AccountStatusEnum, VideoStatusEnum, MediaTypeEnum
         from app.services.ffmpeg import process_video, extract_frames, cleanup_tmp_files
         from app.services.gemini import analyze_video_with_gemini
         from app.services.uploader import (
             download_drive_video,
             upload_to_youtube,
             upload_to_facebook,
+            upload_photo_to_facebook,
             upload_to_instagram,
             delete_drive_file,
         )
@@ -379,20 +380,21 @@ def process_and_upload_video(self, schedule_id: str):
                 )
                 tmp_files_to_cleanup.append(raw_video_path)
 
-                # ── Step 3: FFmpeg Uniquifier ──────────────────────────────────
-                logger.info("[Pipeline] Processing video with FFmpeg...")
-                
-                # Use settings from schedule overrides or account defaults
+                # ── Step 3: FFmpeg Uniquifier (Videos only) ────────────────────
                 overrides = schedule.metadata_overrides or {}
                 wm_pos = overrides.get("watermark_position", "bottom-right")
-                
-                processed_path = process_video(
-                    input_path=raw_video_path,
-                    add_watermark=schedule.add_watermark,
-                    settings={'position': wm_pos}
-                )
 
-                tmp_files_to_cleanup.append(processed_path)
+                if video.media_type == MediaTypeEnum.IMAGE:
+                    logger.info("[Pipeline] Media is an Image. Skipping FFmpeg processing.")
+                    processed_path = raw_video_path
+                else:
+                    logger.info("[Pipeline] Processing video with FFmpeg...")
+                    processed_path = process_video(
+                        input_path=raw_video_path,
+                        add_watermark=schedule.add_watermark,
+                        settings={'position': wm_pos}
+                    )
+                    tmp_files_to_cleanup.append(processed_path)
 
                 ai_mode = overrides.get("ai_mode", True)
                 if video.ai_title and video.ai_description:
@@ -410,9 +412,13 @@ def process_and_upload_video(self, schedule_id: str):
                 else:
 
                     # ── Step 4: Gemini / AI Analysis ───────────────────────────────
-                    logger.info("[Pipeline] Extracting frames for AI analysis...")
-                    frame_paths = extract_frames(processed_path, num_frames=3)
-                    tmp_files_to_cleanup.extend(frame_paths)
+                    if video.media_type == MediaTypeEnum.IMAGE:
+                        logger.info("[Pipeline] Media is an Image. Using original path for AI analysis.")
+                        frame_paths = [processed_path]
+                    else:
+                        logger.info("[Pipeline] Extracting frames for AI analysis...")
+                        frame_paths = extract_frames(processed_path, num_frames=3)
+                        tmp_files_to_cleanup.extend(frame_paths)
 
                     # Get AI Provider and Key
                     from app.models.models import SystemSettings, ApiKeyVault
@@ -477,13 +483,22 @@ def process_and_upload_video(self, schedule_id: str):
                         credentials=google_credentials,  # Full creds for auto-refresh during upload
                     )
                 elif account.platform == PlatformEnum.FACEBOOK:
-                    upload_result = await upload_to_facebook(
-                        video_path=processed_path,
-                        title=title,
-                        description=full_description,
-                        access_token=access_token,
-                        page_id=account.channel_id or "",
-                    )
+                    if video.media_type == MediaTypeEnum.IMAGE:
+                        upload_result = await upload_photo_to_facebook(
+                            image_path=processed_path,
+                            caption=full_description,
+                            access_token=access_token,
+                            page_id=account.channel_id or "",
+                            account_id=str(account.id),
+                        )
+                    else:
+                        upload_result = await upload_to_facebook(
+                            video_path=processed_path,
+                            title=title,
+                            description=full_description,
+                            access_token=access_token,
+                            page_id=account.channel_id or "",
+                        )
                 elif account.platform == PlatformEnum.INSTAGRAM:
                     # Instagram requires a public URL via Google Drive.
                     google_acc_result = await db.execute(
@@ -532,6 +547,39 @@ def process_and_upload_video(self, schedule_id: str):
                 video.status = VideoStatusEnum.UPLOADED
                 await db.commit()
 
+                # ── Auto-comment (Facebook & Instagram) ──────────────────────────
+                if account.auto_comment and account.auto_comment_text and platform_vid_id:
+                    try:
+                        import httpx
+                        comment_text = account.auto_comment_text
+                        
+                        if account.platform == PlatformEnum.FACEBOOK:
+                            comment_url = f"https://graph.facebook.com/v20.0/{platform_vid_id}/comments"
+                            async with httpx.AsyncClient(timeout=30.0) as client:
+                                resp = await client.post(
+                                    comment_url,
+                                    data={
+                                        "access_token": access_token,
+                                        "message": comment_text,
+                                    }
+                                )
+                                resp.raise_for_status()
+                            logger.info(f"[Pipeline] Facebook Auto-comment posted successfully under post {platform_vid_id}")
+                            
+                        elif account.platform == PlatformEnum.INSTAGRAM:
+                            comment_url = f"https://graph.facebook.com/v20.0/{platform_vid_id}/comments"
+                            async with httpx.AsyncClient(timeout=30.0) as client:
+                                resp = await client.post(
+                                    comment_url,
+                                    data={
+                                        "access_token": access_token,
+                                        "message": comment_text,
+                                    }
+                                )
+                                resp.raise_for_status()
+                            logger.info(f"[Pipeline] Instagram Auto-comment posted successfully under Reel/Media {platform_vid_id}")
+                    except Exception as e:
+                        logger.warning(f"[Pipeline] Facebook/Instagram Auto-comment failed (non-critical): {e}")
 
                 logger.info(f"[Pipeline] Upload complete: {published_url}")
 
@@ -548,20 +596,16 @@ def process_and_upload_video(self, schedule_id: str):
                         # Non-fatal: upload is already done.
                         logger.warning(f"[Pipeline] Drive source delete failed (non-fatal): {e}")
 
-                # ── Auto-comment (YouTube only) ─────────────────────────────────
-                if schedule.auto_comment and account.platform == PlatformEnum.YOUTUBE and published_url:
+                # ── Auto-comment (YouTube) ──────────────────────────────────────
+                if account.auto_comment and account.auto_comment_text and account.platform == PlatformEnum.YOUTUBE and published_url:
                     try:
                         import httpx, re
                         match = re.search(r'[?&]v=([\w-]+)', published_url)
                         if match:
                             video_yt_id = match.group(1)
-                            comment_text = (
-                                f"🔥 Watch till the end! {title}\n"
-                                f"💬 Drop your thoughts below!\n"
-                                f"{' '.join((hashtags or [])[:5])}"
-                            )
+                            comment_text = account.auto_comment_text
                             async with httpx.AsyncClient(timeout=15.0) as client:
-                                await client.post(
+                                r = await client.post(
                                     "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet",
                                     headers={"Authorization": f"Bearer {access_token}"},
                                     json={
@@ -573,9 +617,19 @@ def process_and_upload_video(self, schedule_id: str):
                                         }
                                     },
                                 )
-                            logger.info(f"[Pipeline] Auto-comment posted on {video_yt_id}")
+                                r.raise_for_status()
+                                comment_data = r.json()
+                                comment_id = comment_data.get("id")
+                                if comment_id:
+                                    await client.post(
+                                        f"https://www.googleapis.com/youtube/v3/comments/pin?id={comment_id}",
+                                        headers={"Authorization": f"Bearer {access_token}"}
+                                    )
+                                    logger.info(f"[Pipeline] YouTube Auto-comment posted and PINNED successfully: {comment_id}")
+                                else:
+                                    logger.info(f"[Pipeline] YouTube Auto-comment posted successfully: {video_yt_id}")
                     except Exception as e:
-                        logger.warning(f"[Pipeline] Auto-comment failed (non-critical): {e}")
+                        logger.warning(f"[Pipeline] YouTube Auto-comment failed (non-critical): {e}")
 
                 # Send Telegram success alert (if toggle enabled)
                 if await _get_toggle(db, "NOTIFY_UPLOAD_SUCCESS"):
@@ -625,7 +679,7 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
     async def _sync():
         from sqlalchemy import select, and_, func
         from app.database import AsyncSessionLocal
-        from app.models.models import Account, SourceVideo, VideoStatusEnum, UploadSchedule, PlatformEnum, AccountStatusEnum
+        from app.models.models import Account, SourceVideo, VideoStatusEnum, MediaTypeEnum, UploadSchedule, PlatformEnum, AccountStatusEnum
         from app.services.uploader import (
             list_drive_folder_videos,
             extract_folder_id_from_link,
@@ -688,9 +742,10 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
             import os
 
             videos = [f for f in files if "video" in f.get("mimeType", "")]
+            images = [f for f in files if "image" in f.get("mimeType", "")]
             texts = [f for f in files if "text" in f.get("mimeType", "")]
 
-            logger.info(f"[DriveSync] Found {len(videos)} videos and {len(texts)} text files in folder")
+            logger.info(f"[DriveSync] Found {len(videos)} videos, {len(images)} images, and {len(texts)} text files in folder")
 
             txt_map = {}
             for t in texts:
@@ -733,8 +788,15 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                         metadata["description"] = "\n".join(lines[1:])
                 return metadata
 
-            synced = 0
+            # Merge videos and images into media items list
+            media_items = []
             for f in videos:
+                media_items.append((f, MediaTypeEnum.VIDEO))
+            for f in images:
+                media_items.append((f, MediaTypeEnum.IMAGE))
+
+            synced = 0
+            for f, m_type in media_items:
                 existing = await db.execute(
                     select(SourceVideo).where(SourceVideo.drive_file_id == f["id"])
                 )
@@ -748,6 +810,7 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                     drive_download_link=f"https://drive.google.com/uc?id={f['id']}&export=download",
                     original_filename=f.get("name"),
                     file_size_bytes=int(f.get("size", 0)) if f.get("size") else None,
+                    media_type=m_type,
                 )
 
                 base_name = os.path.splitext(f.get("name", ""))[0]
@@ -770,10 +833,10 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
 
                 db.add(new_video)
                 synced += 1
-                logger.info(f"[DriveSync] Added video: {f.get('name')}")
+                logger.info(f"[DriveSync] Added {m_type.value} media: {f.get('name')}")
 
             await db.commit()
-            logger.info(f"[DriveSync] Done. Synced {synced} new videos from folder {folder_id}")
+            logger.info(f"[DriveSync] Done. Synced {synced} new media assets from folder {folder_id}")
 
             # ── Auto-Scheduling Logic ──
             if synced > 0 and target_account.automation_settings:
@@ -786,10 +849,16 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                 if not time_slots:
                     time_slots = ["10:00"]
 
-                # Find all unscheduled videos for this account
+                # Find all unscheduled media matching target media type for this account
+                post_type = settings.get("facebook_post_type", "video")
+                if target_account.platform == PlatformEnum.FACEBOOK and post_type == "image":
+                    target_media_type = MediaTypeEnum.IMAGE
+                else:
+                    target_media_type = MediaTypeEnum.VIDEO
+
                 unscheduled_res = await db.execute(
                     select(SourceVideo).outerjoin(UploadSchedule, SourceVideo.id == UploadSchedule.video_id)
-                    .where(UploadSchedule.id == None)
+                    .where(UploadSchedule.id == None, SourceVideo.media_type == target_media_type)
                     .order_by(SourceVideo.created_at.asc())
                 )
                 videos_to_schedule = unscheduled_res.scalars().all()
@@ -821,16 +890,44 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                             if slot_time > last_time + timedelta(hours=1): # At least 1 hour gap
                                 next_slot = slot_time
                                 break
-                        
                         if not next_slot:
                             # Jump to next day first slot
                             h, m = map(int, sorted(time_slots)[0].split(':'))
                             next_slot = datetime.combine(current_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).replace(hour=h, minute=m)
+
+                        # AI Time Optimizer shift
+                        scheduled_time = next_slot
+                        is_optimized = False
+                        original_time = None
                         
+                        if target_account.ai_time_predictor:
+                            import random
+                            opt_slots = target_account.optimal_slots or {}
+                            weekday_name = next_slot.strftime("%A")
+                            opt_slot_str = opt_slots.get(weekday_name)
+                            
+                            if not opt_slot_str:
+                                # Pre-populate a high-retention active slot (e.g. 12:00, 18:00, 20:00)
+                                active_hours = ["12:00", "18:00", "19:00", "20:00"]
+                                opt_slot_str = random.choice(active_hours)
+                                if not target_account.optimal_slots:
+                                    target_account.optimal_slots = {}
+                                # Update SQLAlchemy mutable dictionary
+                                new_slots = dict(target_account.optimal_slots)
+                                new_slots[weekday_name] = opt_slot_str
+                                target_account.optimal_slots = new_slots
+                            
+                            h, m = map(int, opt_slot_str.split(':'))
+                            original_time = next_slot
+                            scheduled_time = next_slot.replace(hour=h, minute=m)
+                            is_optimized = True
+
                         new_sched = UploadSchedule(
                             video_id=vid.id,
                             account_id=target_account.id,
-                            scheduled_time=next_slot,
+                            scheduled_time=scheduled_time,
+                            original_scheduled_time=original_time,
+                            is_optimized_by_ai=is_optimized,
                             add_watermark=add_watermark,
                             metadata_overrides={
                                 "watermark_position": settings.get("watermark_position", "bottom-right"),
@@ -861,9 +958,11 @@ def poll_youtube_comments(self):
     async def _poll():
         from sqlalchemy import select
         from app.database import AsyncSessionLocal
-        from app.models.models import CommentRule, CommentLog, Account, PlatformEnum
+        from app.models.models import CommentRule, CommentLog, Account, PlatformEnum, SystemSettings, ApiKeyVault
         from app.services.ai_responder import generate_comment_reply
         from app.services.token_service import get_valid_google_credentials, TokenRefreshError
+        from googleapiclient.discovery import build
+        from google.oauth2.credentials import Credentials
 
         logger.info("Polling YouTube comments...")
         async with AsyncSessionLocal() as db:
@@ -880,7 +979,7 @@ def poll_youtube_comments(self):
                 )
                 acc = acc_result.scalar_one_or_none()
 
-                if not acc or not acc.encrypted_access_token:
+                if not acc or not acc.encrypted_access_token or not acc.channel_id:
                     continue
 
                 # Refresh token if needed before polling
@@ -893,7 +992,104 @@ def poll_youtube_comments(self):
 
                 # Fetch recent comments using YouTube Data API v3
                 logger.info(f"Checking YouTube comments for {acc.channel_name}...")
-                # (Full implementation: GET /youtube/v3/commentThreads?allThreadsRelatedToChannelId={acc.channel_id})
+                try:
+                    credentials = Credentials(token=access_token)
+                    youtube = build("youtube", "v3", credentials=credentials)
+                except Exception as e:
+                    logger.error(f"Failed to build YouTube service client for {acc.channel_name}: {e}")
+                    continue
+
+                try:
+                    def _fetch():
+                        req = youtube.commentThreads().list(
+                            part="snippet",
+                            allThreadsRelatedToChannelId=acc.channel_id,
+                            maxResults=20
+                        )
+                        return req.execute()
+
+                    response = await asyncio.to_thread(_fetch)
+                except Exception as e:
+                    logger.error(f"Failed to fetch YouTube comment threads for {acc.channel_name}: {e}")
+                    continue
+
+                threads = response.get("items", [])
+                for thread in threads:
+                    top_comment = thread.get("snippet", {}).get("topLevelComment", {})
+                    comment_id = top_comment.get("id")
+                    if not comment_id:
+                        continue
+
+                    # Extract details
+                    snippet = top_comment.get("snippet", {})
+                    comment_author_channel_id = snippet.get("authorChannelId", {}).get("value")
+                    comment_text = snippet.get("textOriginal", "")
+                    author_name = snippet.get("authorDisplayName", "Unknown")
+
+                    # Skip if it is our own comment
+                    if comment_author_channel_id == acc.channel_id:
+                        continue
+
+                    # Check if already replied
+                    log_res = await db.execute(
+                        select(CommentLog).where(
+                            CommentLog.platform == "youtube",
+                            CommentLog.comment_id == comment_id
+                        )
+                    )
+                    if log_res.scalar_one_or_none():
+                        continue  # Already replied!
+
+                    # 3. Lookup Provider preferences
+                    pref_row = await db.execute(select(SystemSettings).where(SystemSettings.key == "AI_PROVIDER_COMMENTS"))
+                    pref = pref_row.scalar_one_or_none()
+                    provider = pref.value if pref else "gemini"
+
+                    # 4. Lookup Custom Key if not gemini
+                    api_key = None
+                    if provider != "gemini":
+                        key_row = await db.execute(select(ApiKeyVault).where(ApiKeyVault.service_name == provider))
+                        key_obj = key_row.scalar_one_or_none()
+                        if key_obj:
+                            api_key = key_obj.credentials_json.get("api_key")
+
+                    # 5. Use chosen AI to generate the reply
+                    ai_reply = await generate_comment_reply(comment_text, rule.ai_persona, provider=provider, api_key=api_key, db=db)
+                    
+                    if ai_reply:
+                        # Post reply to YouTube using API
+                        try:
+                            def _reply():
+                                body = {
+                                    "snippet": {
+                                        "parentId": comment_id,
+                                        "textOriginal": ai_reply
+                                    }
+                                }
+                                req = youtube.comments().insert(
+                                    part="snippet",
+                                    body=body
+                                )
+                                return req.execute()
+
+                            await asyncio.to_thread(_reply)
+                            logger.info(f"Successfully posted YouTube reply to comment {comment_id} on channel {acc.channel_name}")
+                        except Exception as e:
+                            logger.error(f"Failed to post YouTube comment reply: {e}")
+                            continue
+
+                        # Log the comment
+                        log = CommentLog(
+                            account_id=acc.id,
+                            platform="youtube",
+                            comment_id=comment_id,
+                            author_name=author_name,
+                            comment_text=comment_text,
+                            ai_reply_text=ai_reply,
+                            dm_sent=False
+                        )
+                        db.add(log)
+                        await db.commit()
 
     run_async(_poll())
 
@@ -1012,16 +1208,92 @@ def update_video_analytics():
 
     run_async(_update())
 
+# ── Task: Auto-Healing Unlock For Locked API Keys ─────────────────────────
+@celery_app.task(name="app.worker.auto_unlock_expired_keys")
+def auto_unlock_expired_keys():
+    """
+    Beat scheduler task. Runs every hour.
+    Automatically unlocks keys whose 24-hour cooldown lockout period has ended.
+    """
+    async def _unlock():
+        from app.database import AsyncSessionLocal
+        from app.models.models import ApiKeyVault
+        from sqlalchemy import update, and_
+        
+        logger.info("[AutoUnlock] Checking for expired API key lockouts...")
+        now = datetime.now(timezone.utc)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                update(ApiKeyVault)
+                .where(and_(ApiKeyVault.is_locked == True, ApiKeyVault.unlock_time <= now))
+                .values(is_locked=False, unlock_time=None, lock_reason=None)
+            )
+            await db.commit()
+            if result.rowcount > 0:
+                logger.info(f"[AutoUnlock] Successfully unlocked {result.rowcount} API key(s).")
+                
+    run_async(_unlock())
+
+
+# ── Task: Reset Daily API Usage ───────────────────────────────────────────
+@celery_app.task(name="app.worker.reset_daily_api_usage")
+def reset_daily_api_usage():
+    """
+    Beat scheduler task. Runs once a day at midnight UTC.
+    Resets daily usage counters to 0.
+    """
+    async def _reset():
+        from app.database import AsyncSessionLocal
+        from app.models.models import ApiKeyVault
+        from sqlalchemy import update
+        
+        logger.info("[QuotaReset] Resetting daily API usage counters to 0...")
+        async with AsyncSessionLocal() as db:
+            await db.execute(update(ApiKeyVault).values(daily_usage=0))
+            await db.commit()
+            logger.info("[QuotaReset] Daily usage limits successfully cleared.")
+            
+    run_async(_reset())
+
 
 # ── Celery Beat Schedule ───────────────────────────────────────────────────
 from celery.schedules import crontab
+
 celery_app.conf.beat_schedule = {
+    # 1. Check for upcoming schedules every 5 minutes
+    "check-pending-schedules-every-5-min": {
+        "task": "app.worker.check_pending_schedules",
+        "schedule": 300,
+    },
+    # 2. Poll YouTube for new comments to auto-reply every 5 minutes
+    "poll-youtube-comments-every-5-min": {
+        "task": "app.worker.poll_youtube_comments",
+        "schedule": 300,
+    },
+    # 3. Proactively refresh expiring YouTube tokens every 30 minutes
+    "proactive-token-refresh-every-30-min": {
+        "task": "app.worker.proactive_token_refresh",
+        "schedule": 1800,
+    },
+    # 4. Sync Drive folders every hour
     "sync-drive-folders-every-hour": {
         "task": "app.worker.sync_all_accounts_drive",
-        "schedule": crontab(minute=0), # Every hour
+        "schedule": crontab(minute=0),
     },
+    # 5. Update published video performance analytics every 3 hours
     "update-video-analytics-every-3-hours": {
         "task": "app.worker.update_video_analytics",
-        "schedule": crontab(minute=0, hour="*/3"), # Every 3 hours
+        "schedule": crontab(minute=0, hour="*/3"),
+    },
+    # 6. Hourly self-healing key validations and unlocking of cooldown tokens
+    "hourly-self-healing-cooldown-unlock": {
+        "task": "app.worker.auto_unlock_expired_keys",
+        "schedule": crontab(minute=30),
+    },
+    # 7. Reset daily usage limits at midnight UTC
+    "daily-api-usage-quota-reset": {
+        "task": "app.worker.reset_daily_api_usage",
+        "schedule": crontab(hour=0, minute=0),
     },
 }
+

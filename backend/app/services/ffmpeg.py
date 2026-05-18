@@ -79,6 +79,9 @@ def process_video(
     if not input_path.exists():
         raise FileNotFoundError(f"Input video not found: {input_path}")
 
+    # Ensure temporary directory exists
+    Path(VIDEO_TMP_DIR).mkdir(parents=True, exist_ok=True)
+
     output_filename = f"processed_{input_path.stem}.mp4"
     output_path = Path(VIDEO_TMP_DIR) / output_filename
     

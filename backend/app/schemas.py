@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, List, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
-from app.models.models import PlatformEnum, AccountStatusEnum, VideoStatusEnum
+from app.models.models import PlatformEnum, AccountStatusEnum, VideoStatusEnum, MediaTypeEnum
 
 
 # ── Channel Groups ─────────────────────────────────────────────────────────
@@ -50,6 +50,10 @@ class AccountOut(BaseModel):
     subscriber_count: int
     drive_folder_link: Optional[str] = None
     automation_settings: Optional[dict] = None
+    auto_comment: bool = False
+    auto_comment_text: Optional[str] = None
+    ai_time_predictor: bool = False
+    optimal_slots: Optional[dict] = None
     next_publish_time: Optional[str] = None
     stats: Optional[AccountStats] = None
     created_at: datetime
@@ -60,6 +64,10 @@ class AccountUpdate(BaseModel):
     status: Optional[AccountStatusEnum] = None
     group_id: Optional[uuid.UUID] = None
     drive_folder_link: Optional[str] = None
+    auto_comment: Optional[bool] = None
+    auto_comment_text: Optional[str] = None
+    ai_time_predictor: Optional[bool] = None
+    optimal_slots: Optional[dict] = None
 
 class ScheduleCreate(BaseModel):
     video_id: uuid.UUID
@@ -88,6 +96,7 @@ class ScheduleOut(BaseModel):
     view_count: int = 0
     like_count: int = 0
     comment_count: int = 0
+    media_type: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -140,6 +149,10 @@ class AutoDripRequest(BaseModel):
     metadata_overrides: Optional[MetadataOverrides] = None
 
 
+class ClearQueueRequest(BaseModel):
+    account_ids: List[uuid.UUID]
+
+
 # ── API Key Vault ──────────────────────────────────────────────────────────
 class ApiKeyVaultOut(BaseModel):
     id: uuid.UUID
@@ -180,6 +193,7 @@ class SourceVideoOut(BaseModel):
     ai_hashtags: Optional[list]
     status: VideoStatusEnum
     error_message: Optional[str]
+    media_type: Optional[MediaTypeEnum] = None
     created_at: datetime
     class Config:
         from_attributes = True

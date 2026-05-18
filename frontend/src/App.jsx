@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
+import Analytics from './pages/Analytics'
 import Accounts from './pages/Accounts'
 import ApiVault from './pages/ApiVault'
 import UploadZone from './pages/UploadZone'
@@ -16,6 +17,7 @@ export default function App() {
             <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/overview" replace />} />
                 <Route path="overview" element={<Dashboard />} />
+                <Route path="analytics" element={<Analytics />} />
                 <Route path="accounts" element={<Accounts />} />
                 <Route path="autopublish" element={<AutoPublish />} />
                 <Route path="upload" element={<UploadZone />} />

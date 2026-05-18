@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import List
 import json
+import os
 
 
 class Settings(BaseSettings):
@@ -26,12 +27,12 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/accounts/oauth/google/callback"
+    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/accounts/oauth/google/callback")
 
     # Meta
     META_CLIENT_ID: str = ""
     META_CLIENT_SECRET: str = ""
-    META_REDIRECT_URI: str = "http://localhost:8000/api/v1/accounts/oauth/meta/callback"
+    META_REDIRECT_URI: str = os.getenv("META_REDIRECT_URI", "http://localhost:8000/api/v1/accounts/oauth/meta/callback")
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
     META_WEBHOOK_VERIFY_TOKEN: str = ""
@@ -45,6 +46,9 @@ class Settings(BaseSettings):
     # If true, after a successful publish the system will attempt to delete the
     # original source video from Google Drive (requires Drive scope).
     DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH: bool = False
+
+    # Frontend
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""

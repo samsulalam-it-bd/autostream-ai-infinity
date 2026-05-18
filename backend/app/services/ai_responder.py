@@ -54,10 +54,12 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
         try:
             response = await asyncio.to_thread(_gemini_generate_sync, key, model_name, prompt)
             reply = (getattr(response, "text", "") or "").strip()
-            
-            # 3. Increment usage if vault key was used
-            if vault_key and db:
-                await increment_usage(vault_key.id, db)
+            # 3. Increment usage
+            if db:
+                if vault_key:
+                    await increment_usage(vault_key.id, db)
+                else:
+                    await increment_usage("00000000-0000-0000-0000-000000000001", db)
                 
             logger.info(f"Generated Gemini Reply: {reply}")
             return reply

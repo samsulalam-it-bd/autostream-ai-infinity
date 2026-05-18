@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
     fetchAccounts, deleteAccount, updateAccount, syncAccountNow, 
-    instantPost, triggerPipeline, listApiKeys 
+    instantPost, triggerPipeline, listApiKeys, clearQueueByAccounts
 } from '../lib/api'
 import { 
     Youtube, Facebook, Instagram, Trash2, Edit2, RefreshCw, 
-    Zap, Play, MoreVertical, X, Check, AlertTriangle, ShieldCheck, Plus, ExternalLink
+    Zap, Play, MoreVertical, X, Check, AlertTriangle, ShieldCheck, Plus, ExternalLink,
+    Eraser
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -25,6 +26,33 @@ export default function Accounts() {
     const [activeOverlay, setActiveOverlay] = useState(null)
     const [showAddModal, setShowAddModal] = useState(false)
     const [syncingAll, setSyncingAll] = useState(false)
+
+    // Auto-comment & AI Time Predictor states
+    const [editAutoComment, setEditAutoComment] = useState(false)
+    const [editCommentText, setEditCommentText] = useState('')
+    const [editAiTimePredictor, setEditAiTimePredictor] = useState(false)
+    const [editOptimalSlots, setEditOptimalSlots] = useState({})
+    const [savingSettings, setSavingSettings] = useState(false)
+
+    const handleSaveSettings = async (accountId) => {
+        setSavingSettings(true)
+        try {
+            await updateAccount(accountId, {
+                auto_comment: editAutoComment,
+                auto_comment_text: editCommentText,
+                ai_time_predictor: editAiTimePredictor,
+                optimal_slots: editOptimalSlots
+            })
+            alert('✅ Settings saved successfully!')
+            setActiveOverlay(null)
+            loadAccounts()
+        } catch (e) {
+            console.error(e)
+            alert('Failed to save settings')
+        } finally {
+            setSavingSettings(false)
+        }
+    }
 
     const loadAccounts = async () => {
         setLoading(true)
@@ -64,6 +92,20 @@ export default function Accounts() {
             loadAccounts()
         } catch (e) { console.error(e) }
     }
+
+    const handleClearQueue = async (account) => {
+        if (!window.confirm(`🧹 Clear Pending Queue?\n\nYou are about to cancel all scheduled/pending uploads for "${account.channel_name}". Published videos will not be affected.`)) return
+        try {
+            const res = await clearQueueByAccounts([account.id])
+            alert(`✅ ${res.data.message || 'Queue cleared successfully!'}`)
+            loadAccounts()
+            setActiveOverlay(null)
+        } catch (e) {
+            console.error(e)
+            alert('Failed to clear queue')
+        }
+    }
+
 
     const handleSyncAll = async () => {
         if (accounts.length === 0) return
@@ -205,11 +247,20 @@ export default function Accounts() {
                                     <button onClick={() => handleAction('sync', account)} className="flex-1 bg-[#131829] hover:bg-[#00cec91a] border border-white/5 hover:border-[#00cec9] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#00cec9]" title="Sync Drive">
                                         <RefreshCw className="w-4 h-4 mx-auto" />
                                     </button>
-                                    <button onClick={() => setActiveOverlay({ type: 'edit', id: account.id })} className="flex-1 bg-[#131829] hover:bg-[#6c5ce71a] border border-white/5 hover:border-[#6c5ce7] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#6c5ce7]" title="Edit">
+                                    <button onClick={() => {
+                                        setEditAutoComment(account.auto_comment || false)
+                                        setEditCommentText(account.auto_comment_text || '')
+                                        setEditAiTimePredictor(account.ai_time_predictor || false)
+                                        setEditOptimalSlots(account.optimal_slots || {})
+                                        setActiveOverlay({ type: 'edit', id: account.id })
+                                    }} className="flex-1 bg-[#131829] hover:bg-[#6c5ce71a] border border-white/5 hover:border-[#6c5ce7] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#6c5ce7]" title="Edit">
                                         <Edit2 className="w-4 h-4 mx-auto" />
                                     </button>
                                     <button onClick={() => setActiveOverlay({ type: 'inst', id: account.id })} className="flex-1 bg-[#131829] hover:bg-[#fdcb6e1a] border border-white/5 hover:border-[#fdcb6e] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#fdcb6e]" title="Instant Post">
                                         <Zap className="w-4 h-4 mx-auto" />
+                                    </button>
+                                    <button onClick={() => setActiveOverlay({ type: 'clear', id: account.id })} className="flex-1 bg-[#131829] hover:bg-[#ff76751a] border border-white/5 hover:border-[#ff7675] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#ff7675]" title="Clear Queue">
+                                        <Eraser className="w-4 h-4 mx-auto" />
                                     </button>
                                     <button onClick={() => handleDelete(account.id, account.channel_name)} className="flex-1 bg-[#131829] hover:bg-[#d630311a] border border-white/5 hover:border-[#d63031] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#d63031]" title="Delete">
                                         <Trash2 className="w-4 h-4 mx-auto" />
@@ -235,7 +286,7 @@ export default function Accounts() {
                                             </div>
                                             <div className="flex gap-2 w-full">
                                                 <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5">Cancel</button>
-                                                <button onClick={() => handleDelete(account.id)} className="flex-1 py-2 rounded-xl bg-[#d6303120] text-[#d63031] font-bold text-[13px] border border-[#d6303140] hover:bg-[#d63031]">Yes, Delete</button>
+                                                <button onClick={() => handleDelete(account.id, account.channel_name)} className="flex-1 py-2 rounded-xl bg-[#d6303120] text-[#d63031] font-bold text-[13px] border border-[#d6303140] hover:bg-[#d63031]">Yes, Delete</button>
                                             </div>
                                         </>
                                     )}
@@ -257,20 +308,125 @@ export default function Accounts() {
                                     )}
 
                                     {activeOverlay.type === 'edit' && (
-                                        <div className="w-full h-full flex flex-col items-center justify-center pt-4">
-                                            <div className="text-[16px] font-bold text-white mb-4">Edit Automation</div>
-                                            <div className="text-[12px] text-[#7a85b0] mb-8">
-                                                Go to the Workspace Wizard to modify titles, schedules, and branding for "{account.channel_name}".
+                                        <div className="w-full h-full flex flex-col pt-4">
+                                            <div className="text-[16px] font-bold text-white mb-2">Channel Settings</div>
+                                            <div className="text-[12px] text-[#7a85b0] mb-5">
+                                                Configure automated branding and Call-to-Actions for "{account.channel_name}".
                                             </div>
-                                            <div className="flex gap-2 w-full">
-                                                <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5">Cancel</button>
-                                                <button onClick={() => {
-                                                    setActiveOverlay(null)
-                                                    navigate(`/workspace/${account.id}`)
-                                                }} className="flex-1 py-2 rounded-xl bg-gradient-to-r from-[#6c5ce7] to-[#e84393] text-white font-bold text-[13px]">Open Wizard</button>
+
+                                            {/* Auto-comment toggle */}
+                                            <div className="flex items-center justify-between w-full p-4 rounded-2xl bg-white/[0.02] border border-white/5 mb-4 transition-all hover:bg-white/[0.04]">
+                                                <div className="text-left">
+                                                    <div className="text-[13px] font-bold text-white">💬 Auto-Comment on Post</div>
+                                                    <div className="text-[10px] text-[#7a85b0] mt-0.5">Post a custom first comment immediately after uploading.</div>
+                                                </div>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={editAutoComment} 
+                                                        onChange={(e) => setEditAutoComment(e.target.checked)} 
+                                                        className="sr-only peer" 
+                                                    />
+                                                    <div className="w-10 h-6 bg-[#1b223c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#7a85b0] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#6c5ce7] peer-checked:after:bg-white"></div>
+                                                </label>
+                                            </div>
+
+                                            {/* Auto-comment text area */}
+                                            {editAutoComment && (
+                                                <div className="w-full space-y-1.5 mb-5 text-left animate-in">
+                                                    <div className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider pl-1">Comment Message</div>
+                                                    <textarea
+                                                        value={editCommentText}
+                                                        onChange={(e) => setEditCommentText(e.target.value)}
+                                                        placeholder="Write your Call-to-Action comment here... Supports emojis! 🚀"
+                                                        rows={3}
+                                                        className="w-full p-3.5 rounded-2xl bg-[#080b14] border border-white/10 text-white text-[13px] placeholder:text-[#3d4666] focus:outline-none focus:border-[#6c5ce7] transition-all resize-none custom-scrollbar"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* AI Time Optimizer Toggle */}
+                                            <div className="flex items-center justify-between w-full p-4 rounded-2xl bg-white/[0.02] border border-white/5 mb-4 transition-all hover:bg-white/[0.04]">
+                                                <div className="text-left">
+                                                    <div className="text-[13px] font-bold text-white">📈 AI Optimal Posting Time Predictor</div>
+                                                    <div className="text-[10px] text-[#7a85b0] mt-0.5">Shift schedules dynamically to target peak audience activity.</div>
+                                                </div>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={editAiTimePredictor} 
+                                                        onChange={(e) => setEditAiTimePredictor(e.target.checked)} 
+                                                        className="sr-only peer" 
+                                                    />
+                                                    <div className="w-10 h-6 bg-[#1b223c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#7a85b0] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00cec9] peer-checked:after:bg-white"></div>
+                                                </label>
+                                            </div>
+
+                                            {/* Display predicted optimal times if enabled */}
+                                            {editAiTimePredictor && (
+                                                <div className="w-full p-3 rounded-2xl bg-[#00cec9]/5 border border-[#00cec9]/15 text-left mb-4 animate-in">
+                                                    <div className="text-[10.5px] font-bold text-[#00cec9] uppercase tracking-wider mb-1.5 pl-1">🧠 Calculated Peak Hours (AI Prediction)</div>
+                                                    <div className="grid grid-cols-4 gap-1.5 text-[11px] text-[#7a85b0]">
+                                                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => {
+                                                            const fullDay = day === 'Mon' ? 'Monday' : day === 'Tue' ? 'Tuesday' : day === 'Wed' ? 'Wednesday' : day === 'Thu' ? 'Thursday' : day === 'Fri' ? 'Friday' : day === 'Sat' ? 'Saturday' : 'Sunday';
+                                                            const time = editOptimalSlots[fullDay] || '18:00';
+                                                            return (
+                                                                <div key={day} className="bg-white/5 border border-white/5 rounded-lg p-1.5 text-center">
+                                                                    <div className="text-[9px] text-[#3d4666] font-bold uppercase">{day}</div>
+                                                                    <div className="text-white font-bold mt-0.5">{time}</div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Action buttons */}
+                                            <div className="flex flex-col gap-2 w-full mt-auto">
+                                                <div className="flex gap-2 w-full">
+                                                    <button 
+                                                        onClick={() => setActiveOverlay(null)} 
+                                                        className="flex-1 py-2.5 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5 transition-all hover:bg-[#131829]/80"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleSaveSettings(account.id)} 
+                                                        disabled={savingSettings}
+                                                        className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#6c5ce7] to-[#00cec9] text-white font-bold text-[13px] disabled:opacity-50 transition-all hover:opacity-90"
+                                                    >
+                                                        {savingSettings ? 'Saving...' : 'Save Settings'}
+                                                    </button>
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        setActiveOverlay(null)
+                                                        navigate(`/workspace/${account.id}`)
+                                                    }} 
+                                                    className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-[12px] border border-white/5 transition-all"
+                                                >
+                                                    ⚙️ Open Workspace Wizard
+                                                </button>
                                             </div>
                                         </div>
                                     )}
+
+                                    {activeOverlay.type === 'clear' && (
+                                        <>
+                                            <div className="w-14 h-14 rounded-full bg-[#ff76751a] flex items-center justify-center text-[#ff7675] mb-4">
+                                                <Eraser size={28} />
+                                            </div>
+                                            <div className="text-[16px] font-bold text-white mb-2">Clear Queue</div>
+                                            <div className="text-[12px] text-[#7a85b0] mb-6 px-4">
+                                                Cancel and delete all pending/scheduled uploads for "{account.channel_name}"? Published videos will not be affected.
+                                            </div>
+                                            <div className="flex gap-2 w-full">
+                                                <button onClick={() => setActiveOverlay(null)} className="flex-1 py-2 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5">Cancel</button>
+                                                <button onClick={() => handleClearQueue(account)} className="flex-1 py-2 rounded-xl bg-gradient-to-r from-[#ff7675] to-[#d63031] text-white font-bold text-[13px]">🧹 Clear Queue</button>
+                                            </div>
+                                        </>
+                                    )}
+
                                 </div>
                             )}
                         </div>

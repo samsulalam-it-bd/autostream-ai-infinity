@@ -156,6 +156,43 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* ── Global Audience Reach ──────────────────────────────── */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="sc p-5 bg-[#0d1120] border border-white/5 rounded-2xl flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-[#00b8941a] flex items-center justify-center text-[#00b894] text-[20px]">
+                        👁️
+                    </div>
+                    <div>
+                        <div className="text-[20px] font-bold text-white font-['Clash_Display']">
+                            {Number(stats?.total_views || 0).toLocaleString()}
+                        </div>
+                        <div className="text-[11.5px] text-[#7a85b0] uppercase tracking-wider font-bold">Cumulative Views</div>
+                    </div>
+                </div>
+                <div className="sc p-5 bg-[#0d1120] border border-white/5 rounded-2xl flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-[#e843931a] flex items-center justify-center text-[#e84393] text-[20px]">
+                        ❤️
+                    </div>
+                    <div>
+                        <div className="text-[20px] font-bold text-white font-['Clash_Display']">
+                            {Number(stats?.total_likes || 0).toLocaleString()}
+                        </div>
+                        <div className="text-[11.5px] text-[#7a85b0] uppercase tracking-wider font-bold">Total Reactions</div>
+                    </div>
+                </div>
+                <div className="sc p-5 bg-[#0d1120] border border-white/5 rounded-2xl flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-[#6c5ce71a] flex items-center justify-center text-[#6c5ce7] text-[20px]">
+                        💬
+                    </div>
+                    <div>
+                        <div className="text-[20px] font-bold text-white font-['Clash_Display']">
+                            {Number(stats?.total_comments || 0).toLocaleString()}
+                        </div>
+                        <div className="text-[11.5px] text-[#7a85b0] uppercase tracking-wider font-bold">AI Engagements</div>
+                    </div>
+                </div>
+            </div>
+
             {/* ── Middle Row ────────────────────────────────────────── */}
             <div className="g2">
                 {/* Chart */}
@@ -252,10 +289,10 @@ export default function Dashboard() {
             <div className="mt-6">
                 <div className="sec-hd">
                     <div className="sec-title flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-[#fdcb6e]" /> ⏰ Upcoming Schedules
+                        <CheckCircle className="w-4 h-4 text-[#00b894]" /> Recently Published
                     </div>
-                    <Link to="/upload" className="text-[12px] text-[#7a85b0] hover:text-white transition-colors">
-                        View All →
+                    <Link to="/autopublish" className="text-[12px] text-[#7a85b0] hover:text-white transition-colors">
+                        View History →
                     </Link>
                 </div>
                 <div className="space-y-2">
@@ -268,9 +305,19 @@ export default function Dashboard() {
                                 <div className="text-[13px] font-medium text-white truncate max-w-md">{h.video_title}</div>
                                 <div className="text-[11px] text-[#7a85b0] mt-0.5 flex items-center gap-1.5">
                                     {h.platform === 'youtube' && <Youtube size={10} className="text-red-400" />}
-                                    {h.platform === 'facebook' && <Facebook size={10} className="text-blue-400" />}
+                                    {h.platform === 'facebook' && (
+                                        <div className="flex items-center gap-1">
+                                            <Facebook size={10} className="text-blue-400" />
+                                            {h.media_type === 'IMAGE' ? (
+                                                <span className="text-[9.5px] px-1.5 py-0.2 bg-[#00cec910] text-[#00cec9] rounded-md font-semibold border border-[#00cec920]">📸 Photo</span>
+                                            ) : (
+                                                <span className="text-[9.5px] px-1.5 py-0.2 bg-[#6c5ce710] text-[#6c5ce7] rounded-md font-semibold border border-[#6c5ce720]">🎥 Reel</span>
+                                            )}
+                                        </div>
+                                    )}
                                     {h.platform === 'instagram' && <Instagram size={10} className="text-pink-400" />}
-                                    {h.channel_name} ({h.platform})
+                                    <span className="text-[#3d4666]">•</span>
+                                    <span>{h.channel_name} ({h.platform})</span>
                                 </div>
                             </div>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#00b8941a] text-[#00b894] border border-[#00b89433]">

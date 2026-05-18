@@ -136,6 +136,8 @@ Strict Rules for {platform.upper()}:
                     
                     if vault_key:
                         await increment_usage(vault_key.id, db)
+                    else:
+                        await increment_usage("00000000-0000-0000-0000-000000000001", db)
                     
                     break # Success!
                 except Exception as e:

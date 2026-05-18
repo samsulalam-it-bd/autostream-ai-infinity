@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.models import UploadSchedule, SourceVideo
-from app.schemas import ScheduleCreate, ScheduleOut, AutoDripRequest
+from app.schemas import ScheduleCreate, ScheduleOut, AutoDripRequest, ClearQueueRequest
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
@@ -258,12 +258,81 @@ async def bulk_delete_schedules(
     return {"deleted": result.rowcount, "message": f"Cancelled {result.rowcount} schedule(s)"}
 
 
+@router.post("/clear-queue", status_code=status.HTTP_200_OK)
+async def clear_queue_by_accounts(
+    req: ClearQueueRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete all pending/unpublished schedules associated with one or more specified account IDs.
+    Also revokes any JIT tasks in Celery to prevent orphan executions in the background.
+    """
+    if not req.account_ids:
+        raise HTTPException(status_code=400, detail="No account_ids provided")
+
+    # 1. Fetch the schedules first to extract Celery task IDs
+    result = await db.execute(
+        select(UploadSchedule).where(
+            and_(
+                UploadSchedule.account_id.in_(req.account_ids),
+                UploadSchedule.is_published == False
+            )
+        )
+    )
+    schedules = result.scalars().all()
+    deleted_count = len(schedules)
+
+    if deleted_count > 0:
+        # 2. Extract and revoke any active Celery task IDs
+        task_ids = [s.celery_task_id for s in schedules if s.celery_task_id]
+        if task_ids:
+            try:
+                from app.worker import celery_app
+                import logging
+                logger = logging.getLogger(__name__)
+                for tid in task_ids:
+                    # Ignore non-uuid or custom identifiers (like fan-out stubs)
+                    if tid and "fanout" not in str(tid) and "fan_out" not in str(tid):
+                        celery_app.control.revoke(str(tid), terminate=True)
+                        logger.info(f"Revoked Celery JIT task {tid} during queue clearing")
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to revoke celery JIT tasks during queue clearing: {e}")
+
+        # 3. Perform database deletion
+        for s in schedules:
+            await db.delete(s)
+        await db.commit()
+
+    return {
+        "deleted": deleted_count,
+        "message": f"Successfully cleared {deleted_count} pending schedule(s) for the selected account(s)."
+    }
+
+
 @router.delete("/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_schedule(schedule_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UploadSchedule).where(UploadSchedule.id == schedule_id))
     schedule = result.scalar_one_or_none()
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
+
+    # Revoke Celery task if present
+    if schedule.celery_task_id:
+        try:
+            from app.worker import celery_app
+            import logging
+            logger = logging.getLogger(__name__)
+            tid = schedule.celery_task_id
+            if tid and "fanout" not in str(tid) and "fan_out" not in str(tid):
+                celery_app.control.revoke(str(tid), terminate=True)
+                logger.info(f"Revoked Celery JIT task {tid} during single schedule deletion")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to revoke celery JIT task {schedule.celery_task_id} during schedule deletion: {e}")
+
     await db.delete(schedule)
     await db.commit()
 

@@ -283,7 +283,8 @@ async def google_oauth_callback(code: str, state: str, db: AsyncSession = Depend
 
     await db.commit()
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="http://localhost:5173/accounts?success=true&platform=youtube")
+    from app.core.config import settings as _settings
+    return RedirectResponse(url=f"{_settings.FRONTEND_URL}/accounts?success=true&platform=youtube")
 
 
 @router.get("/oauth/meta/init")
@@ -474,7 +475,8 @@ async def meta_oauth_callback(code: str, state: str, db: AsyncSession = Depends(
 
     await db.commit()
 
-    return RedirectResponse(url=f"http://localhost:5173/accounts?success=true&created={accounts_created}")
+    from app.core.config import settings as _settings
+    return RedirectResponse(url=f"{_settings.FRONTEND_URL}/accounts?success=true&created={accounts_created}")
 
 
 # ── Manual Token Refresh ───────────────────────────────────────────────────

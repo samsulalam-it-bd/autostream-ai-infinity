@@ -86,7 +86,7 @@ export default function Logs() {
 
             {/* ── Log Box ───────────────────────────────────────── */}
             <div className="bg-[#0d1120] border border-white/5 rounded-2xl overflow-hidden shadow-2xl">
-                <div className="max-height-[500px] overflow-y-auto font-mono scrollbar-hide p-2" ref={scrollRef}>
+                <div className="max-h-[500px] overflow-y-auto font-mono scrollbar-hide p-2" ref={scrollRef}>
                     {logs.filter(l => filter === 'all' || l.l === filter).map((log, i) => (
                         <div key={i} className="flex gap-4 px-5 py-3 border-b border-white/5 hover:bg-white/[0.02] transition-colors items-start">
                             <span className="text-[#3d4666] text-[11px] pt-1 min-w-[70px]">{log.t}</span>

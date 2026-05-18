@@ -77,6 +77,8 @@ Return ONLY a valid JSON object:
             # 3. Track usage
             if vault_key:
                 await increment_usage(vault_key.id, db)
+            else:
+                await increment_usage("00000000-0000-0000-0000-000000000001", db)
                 
             return data
         except Exception as ai_err:

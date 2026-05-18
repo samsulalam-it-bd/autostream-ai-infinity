@@ -7,7 +7,7 @@ import {
 import {
     ChevronDown, Folder, HardDrive, RefreshCw, CheckCircle2,
     AlertCircle, FileVideo, Wand2, ArrowRight, Play, Check, ChevronLeft, ChevronRight,
-    Settings2, Calendar, Layout, Trash2, Plus, X
+    Settings2, Calendar, Layout, Trash2, Plus, X, Image
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -46,7 +46,8 @@ export default function WorkspaceWizard() {
         timezone: 'Asia/Dhaka',
         days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
         limit: 3,
-        slots: ['08:00', '14:00', '21:00']
+        slots: ['08:00', '14:00', '21:00'],
+        facebook_post_type: 'video'
     })
 
     useEffect(() => {
@@ -134,7 +135,11 @@ export default function WorkspaceWizard() {
 
     const canContinue = () => {
         if (step === 1) return selectedAccounts.length > 0
-        if (step === 2) return foundVideos.length > 0
+        if (step === 2) {
+            const isImgMode = formData.facebook_post_type === 'image' && selectedAccounts.some(id => accounts.find(a => a.id === id)?.platform === 'facebook');
+            const filtered = foundVideos.filter(v => isImgMode ? v.media_type === 'IMAGE' : v.media_type !== 'IMAGE');
+            return filtered.length > 0;
+        }
         if (step === 3) return formData.desc_template.trim().length > 0
         if (step === 4) return formData.slots.length > 0
         return true
@@ -150,10 +155,13 @@ export default function WorkspaceWizard() {
                 })
             ))
 
+            const isImgMode = formData.facebook_post_type === 'image' && selectedAccounts.some(id => accounts.find(a => a.id === id)?.platform === 'facebook');
+            const filteredMedia = foundVideos.filter(v => isImgMode ? v.media_type === 'IMAGE' : v.media_type !== 'IMAGE');
+
             // 2. Trigger Auto-Drip scheduling
             await createAutoDrip({
                 account_ids: selectedAccounts,
-                video_ids: foundVideos.map(v => v.id),
+                video_ids: filteredMedia.map(v => v.id),
                 settings: {
                     timezone: formData.timezone,
                     time_slots: formData.slots,
@@ -266,6 +274,39 @@ export default function WorkspaceWizard() {
                                     value={driveUrl}
                                     onChange={(e) => setDriveUrl(e.target.value)}
                                 />
+
+                                {selectedAccounts.some(id => accounts.find(a => a.id === id)?.platform === 'facebook') && (
+                                    <div className="bg-[#080b1460] border border-white/5 rounded-2xl p-4 space-y-3 max-w-sm mx-auto text-left animate-in">
+                                        <div className="text-[11px] text-[#7a85b0] font-bold uppercase tracking-wider">📘 Facebook Publish Format</div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(prev => ({ ...prev, facebook_post_type: 'video' }))}
+                                                className={clsx(
+                                                    "px-3 py-2.5 rounded-xl border text-[12px] font-bold transition-all flex items-center justify-center gap-1.5",
+                                                    formData.facebook_post_type === 'video'
+                                                        ? "bg-[#6c5ce720] border-[#6c5ce7] text-white"
+                                                        : "border-white/5 text-[#7a85b0] hover:text-white"
+                                                )}
+                                            >
+                                                🎥 Reels / Video
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(prev => ({ ...prev, facebook_post_type: 'image' }))}
+                                                className={clsx(
+                                                    "px-3 py-2.5 rounded-xl border text-[12px] font-bold transition-all flex items-center justify-center gap-1.5",
+                                                    formData.facebook_post_type === 'image'
+                                                        ? "bg-[#00cec920] border-[#00cec9] text-white"
+                                                        : "border-white/5 text-[#7a85b0] hover:text-white"
+                                                )}
+                                            >
+                                                📸 Image / Photo
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <button onClick={handleSync} className="btn btn-g mx-auto">
                                     <RefreshCw className={clsx("w-4 h-4", isSyncing && "animate-spin")} /> Sync Folder
                                 </button>
@@ -283,29 +324,46 @@ export default function WorkspaceWizard() {
                                     </div>
                                 </div>
 
-                                {foundVideos.length > 0 ? (
-                                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                                        <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-3">Detected Media ({foundVideos.length})</div>
-                                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                                            {foundVideos.map(v => (
-                                                <div key={v.id} className="aspect-square bg-[#131829] rounded-xl overflow-hidden border border-white/5 relative group">
-                                                    <div className="absolute inset-0 flex items-center justify-center bg-[#6c5ce705]">
-                                                        <FileVideo size={20} className="text-[#3d4666] group-hover:text-[#6c5ce7] transition-colors" />
-                                                    </div>
-                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
-                                                        <div className="text-[8px] text-white truncate w-full font-medium">{v.original_filename}</div>
-                                                    </div>
+                                {(() => {
+                                    const isImgMode = formData.facebook_post_type === 'image' && selectedAccounts.some(id => accounts.find(a => a.id === id)?.platform === 'facebook');
+                                    const filteredMedia = foundVideos.filter(v => isImgMode ? v.media_type === 'IMAGE' : v.media_type !== 'IMAGE');
+                                    
+                                    if (filteredMedia.length === 0) {
+                                        return syncProgress === 100 ? (
+                                            <div className="py-10 text-center border border-dashed border-white/5 rounded-2xl bg-white/[0.02] animate-in">
+                                                <AlertCircle className="mx-auto text-[#ff7675] mb-2" size={24} />
+                                                <div className="text-[10px] font-bold text-white uppercase tracking-widest mb-1">
+                                                    {isImgMode ? "No Images Found" : "No Videos Found"}
                                                 </div>
-                                            ))}
+                                                <div className="text-[10px] text-[#7a85b0]">
+                                                    Ensure folder has {isImgMode ? "images (.png, .jpg)" : "videos"} matching sync mode
+                                                </div>
+                                            </div>
+                                        ) : null;
+                                    }
+
+                                    return (
+                                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                            <div className="text-[10px] text-[#6c5ce7] font-bold uppercase tracking-widest mb-3">Detected Media ({filteredMedia.length})</div>
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                                                {filteredMedia.map(v => (
+                                                    <div key={v.id} className="aspect-square bg-[#131829] rounded-xl overflow-hidden border border-white/5 relative group">
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-[#6c5ce705]">
+                                                            {v.media_type === 'IMAGE' ? (
+                                                                <Image size={20} className="text-[#3d4666] group-hover:text-[#00cec9] transition-colors" />
+                                                            ) : (
+                                                                <FileVideo size={20} className="text-[#3d4666] group-hover:text-[#6c5ce7] transition-colors" />
+                                                            )}
+                                                        </div>
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2">
+                                                            <div className="text-[8px] text-white truncate w-full font-medium">{v.original_filename}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : syncProgress === 100 && (
-                                    <div className="py-10 text-center border border-dashed border-white/5 rounded-2xl bg-white/[0.02] animate-in">
-                                        <AlertCircle className="mx-auto text-[#ff7675] mb-2" size={24} />
-                                        <div className="text-[10px] font-bold text-white uppercase tracking-widest mb-1">No Videos Found</div>
-                                        <div className="text-[10px] text-[#7a85b0]">Try a different folder or check permissions</div>
-                                    </div>
-                                )}
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>
@@ -608,9 +666,13 @@ export default function WorkspaceWizard() {
                             <div className="space-y-6">
                                 <div>
                                     <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Timezone</label>
-                                    <select className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#6c5ce7]">
-                                        <option>Asia/Dhaka (UTC+6)</option>
-                                        <option>UTC</option>
+                                    <select 
+                                        value={formData.timezone} 
+                                        onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                                        className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#6c5ce7]"
+                                    >
+                                        <option value="Asia/Dhaka">Asia/Dhaka (UTC+6)</option>
+                                        <option value="UTC">UTC</option>
                                     </select>
                                 </div>
                                 <div>

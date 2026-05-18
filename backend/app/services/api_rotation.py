@@ -13,6 +13,7 @@ class ApiRotationError(Exception):
 # Global registry for system-level key failures (reset on restart)
 # Maps virtual_id -> {"locked_until": datetime, "reason": str}
 SYSTEM_KEY_STATUS = {}
+SYSTEM_KEY_USAGE = {}
 
 async def get_active_api_key(service_name: str, db: AsyncSession) -> Optional[ApiKeyVault]:
     """
@@ -48,6 +49,8 @@ async def report_quota_exceeded(key_id: str, db: AsyncSession, reason: str = "Qu
             "locked_until": datetime.now(timezone.utc) + timedelta(hours=24),
             "reason": reason
         }
+        # Force set dynamic usage to limit when locked to reflect UI state
+        SYSTEM_KEY_USAGE[str(key_id)] = 50 if "gemini" in str(key_id) or "00000000-0000-0000-0000-000000000001" in str(key_id) else 10000
         logger.info(f"System Key {key_id} marked as locked globally: {reason}")
         return
 
@@ -63,6 +66,11 @@ async def report_quota_exceeded(key_id: str, db: AsyncSession, reason: str = "Qu
 
 async def increment_usage(key_id: str, db: AsyncSession, amount: int = 1):
     """Increments the daily usage counter for a key."""
+    if str(key_id).startswith("00000000-0000-0000-0000-00000000000"):
+        SYSTEM_KEY_USAGE[str(key_id)] = SYSTEM_KEY_USAGE.get(str(key_id), 0) + amount
+        logger.info(f"System Key {key_id} usage incremented dynamically: {SYSTEM_KEY_USAGE[str(key_id)]}")
+        return
+
     result = await db.execute(select(ApiKeyVault).where(ApiKeyVault.id == key_id))
     key = result.scalar_one_or_none()
     
@@ -115,4 +123,6 @@ async def reset_daily_quotas(db: AsyncSession):
         .values(is_locked=False, unlock_time=None, lock_reason=None)
     )
     await db.commit()
+    global SYSTEM_KEY_USAGE
+    SYSTEM_KEY_USAGE.clear()
     logger.info("Daily API quotas reset and eligible keys unlocked.")

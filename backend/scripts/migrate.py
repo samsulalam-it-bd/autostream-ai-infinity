@@ -24,6 +24,8 @@ async def run_migrations():
             
             # Account new columns
             await conn.execute(text("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS drive_folder_link VARCHAR(1000)"))
+            await conn.execute(text("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS auto_comment BOOLEAN DEFAULT FALSE"))
+            await conn.execute(text("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS auto_comment_text TEXT"))
             
             print("Successfully altered tables to add missing columns.")
         except Exception as e:

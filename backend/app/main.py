@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.database import init_db
-from app.routers import accounts, api_vault, videos, schedules, logs, dashboard, comments, workspace, engagement
+from app.routers import accounts, api_vault, videos, schedules, logs, dashboard, comments, workspace, engagement, analytics
 
 
 _telegram_token_in_url = re.compile(r"(https://api\.telegram\.org/bot)([^/\s]+)")
@@ -95,6 +95,7 @@ app.include_router(logs.router, prefix=API_PREFIX)
 app.include_router(comments.router, prefix=API_PREFIX)
 app.include_router(workspace.router, prefix=API_PREFIX)
 app.include_router(engagement.router, prefix=API_PREFIX)
+app.include_router(analytics.router, prefix=API_PREFIX)
 
 
 

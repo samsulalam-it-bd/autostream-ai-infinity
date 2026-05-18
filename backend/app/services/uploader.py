@@ -262,6 +262,52 @@ async def upload_to_facebook(
     return {"video_id": video_id, "url": video_url, "response": data}
 
 
+async def upload_photo_to_facebook(
+    image_path: str,
+    caption: str,
+    access_token: str,
+    page_id: str,
+    account_id: Optional[str] = None,
+) -> dict:
+    """Upload a photo/image post to a Facebook Page using the Graph API."""
+    upload_url = f"https://graph.facebook.com/v20.0/{page_id}/photos"
+
+    with open(image_path, "rb") as f:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                upload_url,
+                data={
+                    "access_token": access_token,
+                    "caption": caption,
+                    "published": "true",
+                },
+                files={"source": f},
+            )
+            response.raise_for_status()
+            data = response.json()
+
+    photo_id = data.get("id")
+    photo_url = f"https://www.facebook.com/photo?fbid={photo_id}" if photo_id else ""
+    logger.info(f"Facebook photo upload complete: {photo_url}")
+
+    try:
+        if account_id:
+            from app.database import AsyncSessionLocal
+            from app.services.api_rotation import increment_usage
+            from app.models.models import Account
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as db:
+                import uuid
+                acc_res = await db.execute(select(Account).where(Account.id == uuid.UUID(account_id)))
+                acc = acc_res.scalar_one_or_none()
+                if acc and acc.vault_id:
+                    await increment_usage(acc.vault_id, db, amount=1)
+    except Exception as e:
+        logger.error(f"Failed to increment Meta usage: {e}")
+
+    return {"video_id": photo_id, "url": photo_url, "response": data}
+
+
 async def delete_drive_file(file_id: str, access_token: str):
     """Moves a file to Google Drive trash instead of permanent deletion."""
     import httpx

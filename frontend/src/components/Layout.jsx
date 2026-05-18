@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard, Users, KeyRound, Upload, Terminal,
-    Activity, Zap, HeartPulse, BotMessageSquare, RefreshCw, Send, Monitor, Wand2
+    Activity, Zap, HeartPulse, BotMessageSquare, RefreshCw, Send, Monitor, Wand2,
+    BarChart3
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -32,6 +33,7 @@ export default function Layout() {
     
     const NAV_ITEMS = [
         { to: '/overview', icon: LayoutDashboard, label: 'Dashboard', section: 'Main' },
+        { to: '/analytics', icon: BarChart3, label: 'Analytics Hub', section: 'Main' },
         { to: '/accounts', icon: Users, label: 'Channels', badge: counts.accounts.toString(), section: 'Main' },
         { to: '/autopublish', icon: Zap, label: 'Auto Publish', section: 'Main' },
         { to: '/upload', icon: Upload, label: 'Upload Zone', section: 'Main' },
@@ -45,6 +47,7 @@ export default function Layout() {
     // Map path to titles like in the provided HTML
     const TITLES = {
         '/overview': 'Dashboard',
+        '/analytics': 'Analytics Hub',
         '/accounts': 'Channels',
         '/autopublish': 'Auto Publish',
         '/upload': 'Upload Zone',

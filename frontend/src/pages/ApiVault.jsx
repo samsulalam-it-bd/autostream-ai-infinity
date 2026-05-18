@@ -227,7 +227,7 @@ export default function ApiVault() {
                                     <Play size={12} />
                                 </button>
                             )}
-                            {k.is_locked && !k.is_system && (
+                            {k.is_locked && (
                                 <button onClick={() => handleUnlock(k.id)} className="btn btn-o btn-xs !px-3 !text-[#00cec9] !border-[#00cec930]" title="Reset Quota">
                                     <Unlock size={12} />
                                 </button>

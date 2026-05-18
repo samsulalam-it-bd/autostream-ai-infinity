@@ -257,6 +257,7 @@ async def get_published_history(limit: int = 20, db: AsyncSession = Depends(get_
                 "view_count": int(s.view_count or 0),
                 "like_count": int(s.like_count or 0),
                 "comment_count": int(s.comment_count or 0),
+                "media_type": str(v.media_type.value) if (v and hasattr(v, "media_type") and v.media_type) else "VIDEO",
             })
         except Exception:
             continue

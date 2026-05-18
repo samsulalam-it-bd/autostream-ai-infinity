@@ -18,6 +18,18 @@ async def migrate():
     migrations = [
         # Add metadata_overrides column if not exists (table name from models.py = upload_schedule)
         "ALTER TABLE upload_schedule ADD COLUMN IF NOT EXISTS metadata_overrides JSONB;",
+        # Add auto_comment columns to accounts table
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS auto_comment BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS auto_comment_text TEXT;",
+        # Add AI time predictor columns to accounts
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ai_time_predictor BOOLEAN DEFAULT FALSE;",
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS optimal_slots JSONB DEFAULT '{}';",
+        # Add AI optimized columns to upload_schedule
+        "ALTER TABLE upload_schedule ADD COLUMN IF NOT EXISTS original_scheduled_time TIMESTAMP WITH TIME ZONE;",
+        "ALTER TABLE upload_schedule ADD COLUMN IF NOT EXISTS is_optimized_by_ai BOOLEAN DEFAULT FALSE;",
+        # Create channel_analytics table and index
+        "CREATE TABLE IF NOT EXISTS channel_analytics (id UUID PRIMARY KEY, account_id UUID REFERENCES accounts(id) ON DELETE CASCADE, date DATE NOT NULL, followers_count BIGINT DEFAULT 0, views_count BIGINT DEFAULT 0, likes_count BIGINT DEFAULT 0, engagement_rate DOUBLE PRECISION DEFAULT 0.0, created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP);",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_analytics_acc_date ON channel_analytics(account_id, date);",
         # Clean dirty ai_title values that have Source Link prefix
         "UPDATE source_videos SET ai_title = NULL WHERE ai_title LIKE 'Source Link:%';",
         "UPDATE source_videos SET ai_description = NULL WHERE ai_description LIKE 'Title: Video by%';",

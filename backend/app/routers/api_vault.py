@@ -27,7 +27,7 @@ async def list_api_keys(
     
     # Add virtual .env keys to the list for visibility in UI
     from app.core.config import settings
-    from app.services.api_rotation import SYSTEM_KEY_STATUS
+    from app.services.api_rotation import SYSTEM_KEY_STATUS, SYSTEM_KEY_USAGE
     from datetime import datetime, timezone
     
     now = datetime.now(timezone.utc)
@@ -42,13 +42,14 @@ async def list_api_keys(
 
     if (not service_name or service_name == "gemini") and settings.GEMINI_API_KEY:
         locked, reason = get_status("00000000-0000-0000-0000-000000000001")
+        usage = SYSTEM_KEY_USAGE.get("00000000-0000-0000-0000-000000000001", 0)
         env_keys.append({
             "id": "00000000-0000-0000-0000-000000000001",
             "service_name": "gemini",
             "project_name": "System Default (ENV)",
             "is_locked": locked,
             "lock_reason": reason,
-            "daily_usage": 50 if locked else 0,
+            "daily_usage": usage,
             "daily_limit": 50,
             "created_at": "2024-01-01T00:00:00",
             "is_system": True
@@ -56,13 +57,14 @@ async def list_api_keys(
     
     if (not service_name or service_name == "google") and settings.GOOGLE_CLIENT_ID:
         locked, reason = get_status("00000000-0000-0000-0000-000000000002")
+        usage = SYSTEM_KEY_USAGE.get("00000000-0000-0000-0000-000000000002", 0)
         env_keys.append({
             "id": "00000000-0000-0000-0000-000000000002",
             "service_name": "google",
             "project_name": "System Default (ENV)",
             "is_locked": locked,
             "lock_reason": reason,
-            "daily_usage": 0,
+            "daily_usage": usage,
             "daily_limit": 10000,
             "created_at": "2024-01-01T00:00:00",
             "is_system": True
@@ -70,13 +72,14 @@ async def list_api_keys(
 
     if (not service_name or service_name == "meta") and (settings.META_APP_ID or settings.META_CLIENT_ID):
         locked, reason = get_status("00000000-0000-0000-0000-000000000003")
+        usage = SYSTEM_KEY_USAGE.get("00000000-0000-0000-0000-000000000003", 0)
         env_keys.append({
             "id": "00000000-0000-0000-0000-000000000003",
             "service_name": "meta",
             "project_name": "System Default (ENV)",
             "is_locked": locked,
             "lock_reason": reason,
-            "daily_usage": 0,
+            "daily_usage": usage,
             "daily_limit": 10000,
             "created_at": "2024-01-01T00:00:00",
             "is_system": True
@@ -301,9 +304,28 @@ async def delete_api_key(key_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
 
-@router.post("/{key_id}/unlock", response_model=ApiKeyVaultOut)
+@router.post("/{key_id}/unlock")
 async def unlock_api_key(key_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Manually unlock a locked API key."""
+    key_str = str(key_id)
+    if key_str.startswith("00000000-0000-0000-0000-00000000000"):
+        from app.services.api_rotation import SYSTEM_KEY_STATUS, SYSTEM_KEY_USAGE
+        if key_str in SYSTEM_KEY_STATUS:
+            del SYSTEM_KEY_STATUS[key_str]
+        SYSTEM_KEY_USAGE[key_str] = 0
+        logger.info(f"System Key {key_str} manually unlocked successfully.")
+        return {
+            "id": key_str,
+            "service_name": "gemini" if "1" in key_str else ("google" if "2" in key_str else "meta"),
+            "project_name": "System Default (ENV)",
+            "is_locked": False,
+            "lock_reason": None,
+            "daily_usage": 0,
+            "daily_limit": 50 if "1" in key_str else 10000,
+            "created_at": "2024-01-01T00:00:00",
+            "is_system": True
+        }
+
     result = await db.execute(select(ApiKeyVault).where(ApiKeyVault.id == key_id))
     key = result.scalar_one_or_none()
     if not key:

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Enum, 
-    ForeignKey, Text, BigInteger, JSON
+    ForeignKey, Text, BigInteger, JSON, Date, Float
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -30,6 +30,11 @@ class VideoStatusEnum(str, enum.Enum):
     READY = "ready"
     UPLOADED = "uploaded"
     FAILED = "failed"
+
+
+class MediaTypeEnum(str, enum.Enum):
+    VIDEO = "video"
+    IMAGE = "image"
 
 
 class ChannelGroup(Base):
@@ -65,6 +70,10 @@ class Account(Base):
     subscriber_count = Column(BigInteger, default=0)
     drive_folder_link = Column(String(1000), nullable=True)  # Per-account dedicated Drive folder
     automation_settings = Column(JSONB, default={}, server_default='{}')  # Full setup snapshot
+    auto_comment = Column(Boolean, default=False, nullable=False)
+    auto_comment_text = Column(Text, nullable=True)
+    ai_time_predictor = Column(Boolean, default=False, nullable=False)
+    optimal_slots = Column(JSONB, default={}, server_default='{}')
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -74,6 +83,7 @@ class Account(Base):
     upload_schedules = relationship("UploadSchedule", back_populates="account")
     comment_rules = relationship("CommentRule", back_populates="account")
     comment_logs = relationship("CommentLog", back_populates="account")
+    analytics = relationship("ChannelAnalytics", back_populates="account", cascade="all, delete-orphan")
     api_vault_key = relationship("ApiKeyVault")
 
 
@@ -103,6 +113,7 @@ class SourceVideo(Base):
     original_filename = Column(String(500), nullable=True)
     file_size_bytes = Column(BigInteger, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
+    media_type = Column(Enum(MediaTypeEnum), default=MediaTypeEnum.VIDEO, nullable=False, index=True)
     # AI-generated metadata
     ai_title = Column(String(500), nullable=True)
     ai_description = Column(Text, nullable=True)
@@ -133,6 +144,8 @@ class UploadSchedule(Base):
     auto_comment = Column(Boolean, default=False)
     auto_comment_text = Column(Text, nullable=True)
     metadata_overrides = Column(JSON, nullable=True)
+    original_scheduled_time = Column(DateTime(timezone=True), nullable=True)
+    is_optimized_by_ai = Column(Boolean, default=False, nullable=False)
     celery_task_id = Column(String(255), nullable=True)
     error_message = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)
@@ -147,6 +160,12 @@ class UploadSchedule(Base):
     video = relationship("SourceVideo", back_populates="upload_schedules")
     target_group = relationship("ChannelGroup", back_populates="upload_schedules")
     account = relationship("Account", back_populates="upload_schedules")
+
+    @property
+    def media_type(self) -> str:
+        if self.video and hasattr(self.video, 'media_type') and self.video.media_type:
+            return self.video.media_type.value
+        return "VIDEO"
 
 
 class SystemLog(Base):
@@ -197,4 +216,20 @@ class SystemSettings(Base):
     key = Column(String(100), primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ChannelAnalytics(Base):
+    __tablename__ = "channel_analytics"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    followers_count = Column(BigInteger, default=0)
+    views_count = Column(BigInteger, default=0)
+    likes_count = Column(BigInteger, default=0)
+    engagement_rate = Column(Float, default=0.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationship
+    account = relationship("Account", back_populates="analytics")
 

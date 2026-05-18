@@ -56,6 +56,8 @@ export const createAutoDrip = (data) => api.post('/schedules/auto-drip', data)
 export const deleteSchedule = (id) => api.delete(`/schedules/${id}`)
 export const triggerPipeline = (id) => api.post(`/schedules/${id}/trigger`)
 export const instantPost = (accountId) => api.post(`/schedules/instant-post-next`, { account_id: accountId }) // We might need to add this to backend if missing
+export const clearQueueByAccounts = (accountIds) => api.post('/schedules/clear-queue', { account_ids: accountIds })
+
 
 // ── Logs ───────────────────────────────────────────────────────────────────
 export const fetchLogs = (limit = 100) => api.get('/logs/', { params: { limit } })
@@ -77,5 +79,9 @@ export const testApiKey = (id) => api.post(`/api-vault/${id}/test`)
 // ── AI Engagement ──────────────────────────────────────────────────────────
 export const aiChat = (message, persona) => api.post('/engagement/chat', { message, persona })
 export const quickGen = (topic, platform, style) => api.post('/engagement/quick-gen', { topic, platform, style })
+
+// ── Analytics ──────────────────────────────────────────────────────────────
+export const fetchAnalyticsOverview = () => api.get('/analytics/overview')
+export const fetchAnalyticsCharts = () => api.get('/analytics/charts')
 
 export default api
