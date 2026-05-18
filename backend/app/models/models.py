@@ -126,7 +126,7 @@ class SourceVideo(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    upload_schedules = relationship("UploadSchedule", back_populates="video")
+    upload_schedules = relationship("UploadSchedule", back_populates="video", cascade="all, delete-orphan")
 
 
 class UploadSchedule(Base):

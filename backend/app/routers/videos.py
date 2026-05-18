@@ -46,6 +46,12 @@ async def delete_video(video_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     video = result.scalar_one_or_none()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
+        
+    # Manually delete all schedules referencing this video first to guarantee integrity
+    from app.models.models import UploadSchedule
+    from sqlalchemy import delete
+    await db.execute(delete(UploadSchedule).where(UploadSchedule.video_id == video_id))
+    
     await db.delete(video)
     await db.commit()
 
