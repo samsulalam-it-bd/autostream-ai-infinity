@@ -96,9 +96,11 @@ export default function UploadZone() {
         if (!window.confirm('Are you sure you want to permanently delete this video from the Vault?')) return
         try {
             await api.delete(`/videos/${id}`)
+            alert('Video deleted successfully!')
             loadData()
         } catch (e) {
             console.error(e)
+            alert('Failed to delete video. Please check backend connection.')
         }
     }
 
@@ -303,7 +305,7 @@ export default function UploadZone() {
 
                                             <button 
                                                 onClick={() => handleDeleteVideo(video.id)}
-                                                className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                                className="p-1.5 text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-lg transition-all"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
