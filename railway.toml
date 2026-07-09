@@ -1,0 +1,14 @@
+# Railway.app Deployment Configuration
+# This runs ALL services (API + Worker + Beat) in ONE container
+# to maximize free tier usage
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+startCommand = "/app/start.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
