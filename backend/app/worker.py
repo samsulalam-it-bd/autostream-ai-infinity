@@ -62,6 +62,12 @@ celery_app.conf.update(
             "task": "app.worker.proactive_token_refresh",
             "schedule": 1800,  # every 30 minutes
         },
+        # ── Long-Term Auto-Publish: Sync all Drive folders every hour ──────────
+        # Picks up any new videos/txt files added to Drive and auto-schedules them.
+        "sync-all-accounts-drive": {
+            "task": "app.worker.sync_all_accounts_drive",
+            "schedule": 3600,  # every 1 hour
+        },
     },
     redbeat_redis_url=settings.CELERY_BROKER_URL,
 )
@@ -108,7 +114,8 @@ def check_pending_schedules(self):
 
         logger.info("Checking pending schedules...")
         now = datetime.now(timezone.utc)
-        trigger_window = now + timedelta(minutes=35)
+        trigger_window = now + timedelta(minutes=8)
+        past_limit = now - timedelta(hours=6)
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -116,7 +123,7 @@ def check_pending_schedules(self):
                     and_(
                         UploadSchedule.is_published == False,
                         UploadSchedule.scheduled_time <= trigger_window,
-                        UploadSchedule.scheduled_time >= now,
+                        UploadSchedule.scheduled_time >= past_limit,
                         UploadSchedule.celery_task_id == None,
                     )
                 )
@@ -128,7 +135,7 @@ def check_pending_schedules(self):
                     # Group schedule: fan out to all accounts in the group
                     task = fan_out_group_schedule.apply_async(
                         args=[str(schedule.id)],
-                        eta=schedule.scheduled_time - timedelta(minutes=30),
+                        eta=schedule.scheduled_time - timedelta(minutes=3),
                         queue="default",
                     )
                     schedule.celery_task_id = f"fanout_pending:{task.id}"
@@ -137,7 +144,7 @@ def check_pending_schedules(self):
                     # Single account schedule: dispatch JIT pipeline directly
                     task = process_and_upload_video.apply_async(
                         args=[str(schedule.id)],
-                        eta=schedule.scheduled_time - timedelta(minutes=30),
+                        eta=schedule.scheduled_time - timedelta(minutes=3),
                         queue="video_pipeline",
                     )
                     schedule.celery_task_id = task.id
@@ -266,6 +273,7 @@ def process_and_upload_video(self, schedule_id: str):
             upload_to_facebook,
             upload_photo_to_facebook,
             upload_to_instagram,
+            upload_photo_to_instagram,
             delete_drive_file,
         )
         from app.services.telegram import (
@@ -279,6 +287,14 @@ def process_and_upload_video(self, schedule_id: str):
         tmp_files_to_cleanup = []
 
         try:
+            # ── Distributed Redis Lock to prevent duplicate concurrent processing ──
+            redis_client = celery_app.backend.client
+            lock_key = f"active_upload_schedule:{schedule_id}"
+            is_locked = redis_client.set(lock_key, "true", ex=900, nx=True)
+            if not is_locked:
+                logger.warning(f"[Pipeline Lock] Schedule {schedule_id} is already being processed by another worker task. Skipping.")
+                return
+
             async with AsyncSessionLocal() as db:
 
                 # ── Step 1: Load schedule ──────────────────────────────────────
@@ -369,6 +385,57 @@ def process_and_upload_video(self, schedule_id: str):
                 if not drive_access_token:
                     raise RuntimeError("Google Drive access token missing. Re-authenticate the YouTube/Google account.")
 
+                # ── Duplicate Post Detection & Prevention ──
+                if account:
+                    from sqlalchemy import or_
+                    dup_query = (
+                        select(UploadSchedule)
+                        .join(SourceVideo, UploadSchedule.video_id == SourceVideo.id)
+                        .where(
+                            UploadSchedule.account_id == account.id,
+                            UploadSchedule.is_published == True,
+                            UploadSchedule.id != schedule.id,
+                            or_(
+                                UploadSchedule.video_id == schedule.video_id,
+                                SourceVideo.original_filename == video.original_filename
+                            )
+                        )
+                    )
+                    dup_result = await db.execute(dup_query)
+                    dup_schedule = dup_result.scalar_one_or_none()
+
+                    if dup_schedule:
+                        logger.warning(
+                            f"[Pipeline] Video duplicate detected! Video '{video.original_filename}' (ID: {video.id}) "
+                            f"has already been successfully published to Account '{account.channel_name}' (Schedule ID: {dup_schedule.id}). "
+                            "Skipping upload to prevent duplicate post."
+                        )
+                        # Mark current schedule as published (skipped) to prevent re-runs
+                        schedule.is_published = True
+                        schedule.published_at = datetime.now(timezone.utc)
+                        schedule.published_url = dup_schedule.published_url
+                        schedule.error_message = f"Skipped duplicate: already posted under Schedule {dup_schedule.id}."
+                        await db.commit()
+
+                        # Optional: Delete duplicate source file from Google Drive if configured
+                        from app.core.config import settings as app_settings
+                        overrides = schedule.metadata_overrides or {}
+                        should_delete = overrides.get("delete_from_drive", app_settings.DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH)
+                        if should_delete:
+                            try:
+                                from app.services.uploader import extract_folder_id_from_link
+                                google_account = account if account.platform == PlatformEnum.YOUTUBE else (locals().get("yt_account") or None)
+                                parent_id = None
+                                folder_link = (account.drive_folder_link if account else None) or (google_account.drive_folder_link if google_account else None)
+                                if folder_link:
+                                    parent_id = extract_folder_id_from_link(folder_link)
+                                
+                                await delete_drive_file(video.drive_file_id, drive_access_token, parent_id=parent_id)
+                                logger.info(f"[Pipeline] Duplicate source Drive file deleted/removed: {video.drive_file_id}")
+                            except Exception as e:
+                                logger.warning(f"[Pipeline] Drive duplicate source delete failed (non-fatal): {e}")
+                        return
+
                 # ── Step 2: Download from Drive ────────────────────────────────
                 logger.info(f"[Pipeline] Downloading from Drive: {video.drive_file_id}")
                 base_name = os.path.basename(video.original_filename or f"{video.drive_file_id}.mp4")
@@ -380,25 +447,50 @@ def process_and_upload_video(self, schedule_id: str):
                 )
                 tmp_files_to_cleanup.append(raw_video_path)
 
-                # ── Step 3: FFmpeg Uniquifier (Videos only) ────────────────────
                 overrides = schedule.metadata_overrides or {}
-                wm_pos = overrides.get("watermark_position", "bottom-right")
+                
+                # Fetch settings from account automation_settings (fallback to schedule overrides or defaults)
+                acc_settings = account.automation_settings or {}
+                
+                wm_pos = acc_settings.get("watermark_pos", overrides.get("watermark_position", "BR"))
+                wm_size = float(acc_settings.get("watermark_size", 15)) / 100.0
+                wm_opacity = float(acc_settings.get("watermark_opacity", 0.8))
+                
+                text_text = acc_settings.get("overlay_text", "")
+                text_pos = acc_settings.get("text_pos", "BC")
+                text_color = acc_settings.get("text_color", "#ffffff")
+
+                video_editing_enabled = overrides.get("video_editing", acc_settings.get("video_editing", True))
 
                 if video.media_type == MediaTypeEnum.IMAGE:
                     logger.info("[Pipeline] Media is an Image. Skipping FFmpeg processing.")
+                    processed_path = raw_video_path
+                elif not video_editing_enabled:
+                    logger.info("[Pipeline] Visual Video Editing is DISABLED by preference. Uploading RAW video from Google Drive.")
                     processed_path = raw_video_path
                 else:
                     logger.info("[Pipeline] Processing video with FFmpeg...")
                     processed_path = process_video(
                         input_path=raw_video_path,
                         add_watermark=schedule.add_watermark,
-                        settings={'position': wm_pos}
+                        text_text=text_text,
+                        target_platform=account.platform.value,
+                        settings={
+                            'position': wm_pos,
+                            'width': wm_size,
+                            'height': wm_size,
+                            'opacity': wm_opacity,
+                            'text_pos': text_pos,
+                            'text_color': text_color
+                        }
                     )
                     tmp_files_to_cleanup.append(processed_path)
 
                 ai_mode = overrides.get("ai_mode", True)
-                if video.ai_title and video.ai_description:
-                    logger.info("[Pipeline] Custom metadata (from .txt) found. Skipping AI analysis.")
+                
+                # Metadata Logic
+                if video.ai_title or video.ai_description:
+                    logger.info("[Pipeline] Existing .txt metadata found. Using it.")
                     title = video.ai_title
                     description = video.ai_description
                     tags = video.ai_tags or []
@@ -410,7 +502,6 @@ def process_and_upload_video(self, schedule_id: str):
                     tags = []
                     hashtags = [f"#{account.platform.value}"]
                 else:
-
                     # ── Step 4: Gemini / AI Analysis ───────────────────────────────
                     if video.media_type == MediaTypeEnum.IMAGE:
                         logger.info("[Pipeline] Media is an Image. Using original path for AI analysis.")
@@ -446,11 +537,15 @@ def process_and_upload_video(self, schedule_id: str):
                     tags        = video.ai_tags or ai_metadata["tags"]
                     hashtags    = video.ai_hashtags or ai_metadata["hashtags"]
 
-                    # Save AI metadata to DB
-                    video.ai_title = title
-                    video.ai_description = description
-                    video.ai_tags = tags
-                    video.ai_hashtags = hashtags
+                    # Save AI metadata to DB — but NEVER overwrite .txt-sourced fields
+                    if not video.ai_title:
+                        video.ai_title = title
+                    if not video.ai_description:
+                        video.ai_description = description
+                    if not video.ai_tags:
+                        video.ai_tags = tags
+                    if not video.ai_hashtags:
+                        video.ai_hashtags = hashtags
                     await db.commit()
 
                 full_description = f"{description}\n\n{' '.join(hashtags)}"
@@ -527,14 +622,24 @@ def process_and_upload_video(self, schedule_id: str):
                     if not ig_folder_id:
                         ig_folder_id = "" # Fixed by AI
 
-                    upload_result = await upload_to_instagram(
-                        video_path=processed_path,
-                        caption=caption,
-                        access_token=access_token,
-                        ig_user_id=account.channel_id or "",
-                        google_access_token=google_access_token,
-                        target_folder_id=ig_folder_id,
-                    )
+                    if video.media_type == MediaTypeEnum.IMAGE:
+                        upload_result = await upload_photo_to_instagram(
+                            image_path=processed_path,
+                            caption=caption,
+                            access_token=access_token,
+                            ig_user_id=account.channel_id or "",
+                            google_access_token=google_access_token,
+                            target_folder_id=ig_folder_id,
+                        )
+                    else:
+                        upload_result = await upload_to_instagram(
+                            video_path=processed_path,
+                            caption=caption,
+                            access_token=access_token,
+                            ig_user_id=account.channel_id or "",
+                            google_access_token=google_access_token,
+                            target_folder_id=ig_folder_id,
+                        )
                 # ── Step 6: Mark as published ──────────────────────────────────
                 published_url = upload_result.get("url", "")
                 platform_vid_id = upload_result.get("video_id") or upload_result.get("media_id")
@@ -589,12 +694,19 @@ def process_and_upload_video(self, schedule_id: str):
                 
                 if should_delete:
                     try:
+                        from app.services.uploader import extract_folder_id_from_link
+                        google_account = account if account.platform == PlatformEnum.YOUTUBE else (locals().get("yt_account") or None)
+                        parent_id = None
+                        folder_link = (account.drive_folder_link if account else None) or (google_account.drive_folder_link if google_account else None)
+                        if folder_link:
+                            parent_id = extract_folder_id_from_link(folder_link)
+                        
                         # Uses the Drive token used for download step.
-                        await delete_drive_file(video.drive_file_id, drive_access_token)
-                        logger.info(f"[Pipeline] Source Drive file deleted: {video.drive_file_id}")
+                        await delete_drive_file(video.drive_file_id, drive_access_token, parent_id=parent_id)
+                        logger.info(f"[Pipeline] Source Drive file deleted/removed: {video.drive_file_id}")
                     except Exception as e:
                         # Non-fatal: upload is already done.
-                        logger.warning(f"[Pipeline] Drive source delete failed (non-fatal): {e}")
+                        logger.warning(f"[Pipeline] Drive source delete/removal failed (non-fatal): {e}")
 
                 # ── Auto-comment (YouTube) ──────────────────────────────────────
                 if account.auto_comment and account.auto_comment_text and account.platform == PlatformEnum.YOUTUBE and published_url:
@@ -660,6 +772,11 @@ def process_and_upload_video(self, schedule_id: str):
                 pass
             raise exc
         finally:
+            # ── Release Distributed Redis Lock ──
+            try:
+                redis_client.delete(lock_key)
+            except Exception:
+                pass
             cleanup_tmp_files(*tmp_files_to_cleanup)
             logger.info("[Pipeline] Done. Temp files cleaned up.")
 
@@ -671,7 +788,7 @@ def process_and_upload_video(self, schedule_id: str):
 
 # ── Task: Sync Drive Folder ────────────────────────────────────────────────
 @celery_app.task(name="app.worker.sync_drive_folder", bind=True, queue="default")
-def sync_drive_folder(self, folder_link: str, account_id: str):
+def sync_drive_folder(self, folder_link: str, account_id: str, auto_schedule: bool = True):
     """
     Sync all videos from a Google Drive folder link into source_videos table.
     Creates SourceVideo records for each video found (skips duplicates).
@@ -751,41 +868,62 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
             for t in texts:
                 name = t.get("name", "")
                 base = os.path.splitext(name)[0]
+                base_no_ext = os.path.splitext(base)[0] if '.' in base else base
                 txt_map[base] = t
+                txt_map[name] = t
+                txt_map[base_no_ext] = t
+                if name.lower().endswith(".txt"):
+                    txt_map[name[:-4]] = t
 
             def parse_metadata_text(text_content: str):
                 metadata = {"title": None, "description": None, "tags": [], "hashtags": []}
-                has_strict_keys = any(text_content.lower().startswith(k) for k in ["title:", "description:", "tags:", "hashtags:"])
+                
+                lines = text_content.split('\n')
+                has_strict_keys = any(
+                    any(line.strip().lower().startswith(k) for k in ["title:", "description:", "tags:", "hashtags:"])
+                    for line in lines
+                )
 
                 if has_strict_keys:
-                    lines = text_content.split('\n')
                     current_key = None
                     for line in lines:
                         line_stripped = line.strip()
                         lower_line = line_stripped.lower()
 
                         if lower_line.startswith("title:"):
-                            metadata["title"] = line_stripped[6:].strip()
+                            colon_idx = line_stripped.find(":")
+                            metadata["title"] = line_stripped[colon_idx+1:].strip()
                             current_key = "title"
                         elif lower_line.startswith("description:"):
-                            metadata["description"] = line_stripped[12:].strip()
+                            colon_idx = line_stripped.find(":")
+                            metadata["description"] = line_stripped[colon_idx+1:].strip()
                             current_key = "description"
                         elif lower_line.startswith("tags:"):
-                            tags_str = line_stripped[5:].strip()
+                            colon_idx = line_stripped.find(":")
+                            tags_str = line_stripped[colon_idx+1:].strip()
                             metadata["tags"] = [t.strip() for t in tags_str.split(",") if t.strip()]
                             current_key = "tags"
                         elif lower_line.startswith("hashtags:"):
-                            hash_str = line_stripped[9:].strip()
+                            colon_idx = line_stripped.find(":")
+                            hash_str = line_stripped[colon_idx+1:].strip()
                             metadata["hashtags"] = [h.strip() for h in hash_str.split() if h.strip().startswith("#")]
                             current_key = "hashtags"
                         else:
                             if current_key == "description" and line_stripped:
-                                metadata["description"] += "\n" + line_stripped
+                                if metadata["description"]:
+                                    metadata["description"] += "\n" + line_stripped
+                                else:
+                                    metadata["description"] = line_stripped
                 else:
-                    lines = [ln.strip() for ln in text_content.split('\n') if ln.strip()]
-                    if lines:
-                        metadata["title"] = lines[0]
-                        metadata["description"] = "\n".join(lines[1:])
+                    valid_lines = [ln.strip() for ln in lines if ln.strip()]
+                    if valid_lines:
+                        first_line = valid_lines[0]
+                        if len(first_line) > 150:
+                            metadata["title"] = first_line[:97] + "..."
+                            metadata["description"] = text_content
+                        else:
+                            metadata["title"] = first_line[:100]
+                            metadata["description"] = "\n".join(valid_lines[1:])
                 return metadata
 
             # Merge videos and images into media items list
@@ -813,8 +951,9 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                     media_type=m_type,
                 )
 
-                base_name = os.path.splitext(f.get("name", ""))[0]
-                matching_txt = txt_map.get(base_name)
+                full_name = f.get("name", "")
+                base_name = os.path.splitext(full_name)[0]
+                matching_txt = txt_map.get(base_name) or txt_map.get(full_name)
                 if matching_txt:
                     try:
                         logger.info(f"[DriveSync] Found matching .txt for {base_name}, applying metadata...")
@@ -839,7 +978,7 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
             logger.info(f"[DriveSync] Done. Synced {synced} new media assets from folder {folder_id}")
 
             # ── Auto-Scheduling Logic ──
-            if synced > 0 and target_account.automation_settings:
+            if auto_schedule and synced > 0 and target_account.automation_settings:
                 settings = target_account.automation_settings
                 frequency = settings.get("frequency", 1)
                 time_slots = settings.get("time_slots", ["10:00", "18:00"])
@@ -856,15 +995,28 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                 else:
                     target_media_type = MediaTypeEnum.VIDEO
 
+                # Only schedule videos NOT already scheduled for THIS specific account
+                # (A video can be scheduled to multiple accounts independently)
+                already_scheduled_res = await db.execute(
+                    select(UploadSchedule.video_id)
+                    .where(UploadSchedule.account_id == target_account.id)
+                )
+                already_scheduled_ids = set(already_scheduled_res.scalars().all())
+
                 unscheduled_res = await db.execute(
-                    select(SourceVideo).outerjoin(UploadSchedule, SourceVideo.id == UploadSchedule.video_id)
-                    .where(UploadSchedule.id == None, SourceVideo.media_type == target_media_type)
+                    select(SourceVideo)
+                    .where(
+                        SourceVideo.media_type == target_media_type,
+                        SourceVideo.id.notin_(already_scheduled_ids) if already_scheduled_ids else True
+                    )
                     .order_by(SourceVideo.created_at.asc())
                 )
                 videos_to_schedule = unscheduled_res.scalars().all()
                 
                 if videos_to_schedule:
-                    # Find last scheduled time for this account
+                    # ── Determine starting point ─────────────────────────────────
+                    # Start after the last already-scheduled time for this account.
+                    # If nothing is scheduled yet (or all are in the past), start from now.
                     last_sched_res = await db.execute(
                         select(UploadSchedule.scheduled_time)
                         .where(UploadSchedule.account_id == target_account.id)
@@ -872,51 +1024,82 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                         .limit(1)
                     )
                     last_time = last_sched_res.scalar_one_or_none()
-                    
-                    if not last_time or last_time < datetime.now(timezone.utc):
-                        last_time = datetime.now(timezone.utc)
-                    
+
+                    now_utc = datetime.now(timezone.utc)
+                    if not last_time or last_time < now_utc:
+                        last_time = now_utc
+
+                    # ── Slot Generator: cycles through time_slots day by day ──────
+                    # Guarantees each video gets exactly one slot, advancing to the
+                    # next day when all slots for the current day are exhausted.
+                    def slot_generator(start_after: datetime, slots: list):
+                        """Infinite generator yielding the next available datetime slot."""
+                        from datetime import time as dt_time
+                        parsed = []
+                        for s in sorted(slots):
+                            h, m = map(int, s.split(':'))
+                            parsed.append(dt_time(h, m))
+
+                        current_date = start_after.date()
+                        while True:
+                            for t in parsed:
+                                candidate = datetime.combine(
+                                    current_date, t, tzinfo=timezone.utc
+                                )
+                                # Must be at least 1 hour after the last scheduled slot
+                                if candidate > start_after + timedelta(minutes=30):
+                                    yield candidate
+                                    return  # caller will re-call generator per video
+                            # All slots for current_date are in the past / too close — advance day
+                            current_date += timedelta(days=1)
+
                     scheduled_count = 0
                     for vid in videos_to_schedule:
-                        # Find next slot
-                        # Basic logic: Increment day if we exceeded frequency, or just step through time slots
-                        current_date = last_time.date()
-                        
-                        # Find which slot is next
+                        # Find next available slot strictly after last_time
                         next_slot = None
-                        for slot_str in sorted(time_slots):
-                            h, m = map(int, slot_str.split(':'))
-                            slot_time = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone.utc).replace(hour=h, minute=m)
-                            if slot_time > last_time + timedelta(hours=1): # At least 1 hour gap
-                                next_slot = slot_time
-                                break
-                        if not next_slot:
-                            # Jump to next day first slot
-                            h, m = map(int, sorted(time_slots)[0].split(':'))
-                            next_slot = datetime.combine(current_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).replace(hour=h, minute=m)
+                        from datetime import time as dt_time
+                        sorted_slots = sorted(time_slots)
+                        current_date = last_time.date()
 
-                        # AI Time Optimizer shift
+                        # Walk through today's slots first, then advance days
+                        found = False
+                        for offset_days in range(365):  # Safety cap: 1 year ahead max
+                            check_date = current_date + timedelta(days=offset_days)
+                            for slot_str in sorted_slots:
+                                h, m = map(int, slot_str.split(':'))
+                                candidate = datetime.combine(check_date, dt_time(h, m), tzinfo=timezone.utc)
+                                if candidate > last_time + timedelta(minutes=30):
+                                    next_slot = candidate
+                                    found = True
+                                    break
+                            if found:
+                                break
+
+                        if not next_slot:
+                            # Absolute fallback: tomorrow at first slot
+                            h, m = map(int, sorted_slots[0].split(':'))
+                            next_slot = datetime.combine(
+                                last_time.date() + timedelta(days=1), dt_time(h, m), tzinfo=timezone.utc
+                            )
+
+                        # ── AI Time Optimizer shift ───────────────────────────────
                         scheduled_time = next_slot
                         is_optimized = False
                         original_time = None
-                        
+
                         if target_account.ai_time_predictor:
                             import random
                             opt_slots = target_account.optimal_slots or {}
                             weekday_name = next_slot.strftime("%A")
                             opt_slot_str = opt_slots.get(weekday_name)
-                            
+
                             if not opt_slot_str:
-                                # Pre-populate a high-retention active slot (e.g. 12:00, 18:00, 20:00)
                                 active_hours = ["12:00", "18:00", "19:00", "20:00"]
                                 opt_slot_str = random.choice(active_hours)
-                                if not target_account.optimal_slots:
-                                    target_account.optimal_slots = {}
-                                # Update SQLAlchemy mutable dictionary
-                                new_slots = dict(target_account.optimal_slots)
-                                new_slots[weekday_name] = opt_slot_str
-                                target_account.optimal_slots = new_slots
-                            
+                                slots_dict = dict(target_account.optimal_slots or {})
+                                slots_dict[weekday_name] = opt_slot_str
+                                target_account.optimal_slots = slots_dict
+
                             h, m = map(int, opt_slot_str.split(':'))
                             original_time = next_slot
                             scheduled_time = next_slot.replace(hour=h, minute=m)
@@ -931,20 +1114,62 @@ def sync_drive_folder(self, folder_link: str, account_id: str):
                             add_watermark=add_watermark,
                             metadata_overrides={
                                 "watermark_position": settings.get("watermark_position", "bottom-right"),
-                                "ai_mode": ai_metadata
+                                "ai_mode": ai_metadata,
+                                "prefer_drive_metadata": True,
                             }
                         )
                         db.add(new_sched)
+                        # Advance: next video must slot AFTER this one
                         last_time = next_slot
                         scheduled_count += 1
-                    
+
                     await db.commit()
-                    logger.info(f"[DriveSync] Auto-scheduled {scheduled_count} videos for {target_account.channel_name}")
+                    logger.info(
+                        f"[DriveSync] Auto-scheduled {scheduled_count} videos for "
+                        f"{target_account.channel_name} "
+                        f"(slots: {time_slots})"
+                    )
 
             return {"synced": synced, "total": len(files)}
 
 
     return run_async(_sync())
+
+
+# ── Task: Sync All Accounts Drive (Periodic Hourly) ───────────────────────────
+@celery_app.task(name="app.worker.sync_all_accounts_drive")
+def sync_all_accounts_drive():
+    """
+    Beat scheduler task. Runs every hour.
+    Scans all active accounts that have a Drive folder configured,
+    and dispatches a sync task for each of them.
+    """
+    async def _sync_all():
+        from sqlalchemy import select
+        from app.database import AsyncSessionLocal
+        from app.models.models import Account, AccountStatusEnum
+        
+        logger.info("[DriveSyncAll] Starting periodic scan of all account Drive folders...")
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Account).where(
+                    Account.status == AccountStatusEnum.ACTIVE,
+                    Account.drive_folder_link != None,
+                    Account.drive_folder_link != ""
+                )
+            )
+            accounts = result.scalars().all()
+            
+            logger.info(f"[DriveSyncAll] Found {len(accounts)} active accounts to sync.")
+            for acc in accounts:
+                try:
+                    # Dispatch sync task for this account with auto_schedule=True
+                    sync_drive_folder.delay(acc.drive_folder_link, str(acc.id), True)
+                    logger.info(f"[DriveSyncAll] Queued sync for account: {acc.channel_name} ({acc.id})")
+                except Exception as e:
+                    logger.error(f"[DriveSyncAll] Failed to queue sync for account {acc.channel_name}: {e}")
+                    
+    run_async(_sync_all())
 
 
 # ── Task: Poll YouTube Comments ────────────────────────────────────────────
@@ -1053,8 +1278,11 @@ def poll_youtube_comments(self):
                         if key_obj:
                             api_key = key_obj.credentials_json.get("api_key")
 
-                    # 5. Use chosen AI to generate the reply
-                    ai_reply = await generate_comment_reply(comment_text, rule.ai_persona, provider=provider, api_key=api_key, db=db)
+                    if rule.custom_reply_text and rule.custom_reply_text.strip():
+                        ai_reply = rule.custom_reply_text
+                    else:
+                        # 5. Use chosen AI to generate the reply
+                        ai_reply = await generate_comment_reply(comment_text, rule.ai_persona, provider=provider, api_key=api_key, db=db)
                     
                     if ai_reply:
                         # Post reply to YouTube using API

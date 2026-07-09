@@ -1,0 +1,118 @@
+services:
+  # ─── Backend API (FastAPI) ────────────────────────────────────────
+  - type: web
+    name: autostream-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: singapore
+    branch: main
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # Render dashboard এ manually set করবে
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: FERNET_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://autostream-backend.onrender.com/api/v1/accounts/oauth/google/callback
+      - key: META_CLIENT_ID
+        sync: false
+      - key: META_CLIENT_SECRET
+        sync: false
+      - key: META_REDIRECT_URI
+        value: https://autostream-backend.onrender.com/api/v1/accounts/oauth/meta/callback
+      - key: META_SCOPES
+        value: public_profile,pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: APP_NAME
+        value: AutoStream AI Infinity
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_ORIGINS
+        value: '["https://autostream-frontend.vercel.app","http://localhost:5173"]'
+      - key: FRONTEND_URL
+        value: https://autostream-frontend.vercel.app
+      - key: DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH
+        value: true
+
+  # ─── Celery Worker ────────────────────────────────────────────────
+  - type: worker
+    name: autostream-worker
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: celery -A app.worker.celery_app worker --loglevel=info --queues=video_pipeline,default -c 2
+    region: singapore
+    branch: main
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: FERNET_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: META_CLIENT_ID
+        sync: false
+      - key: META_CLIENT_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH
+        value: true
+
+  # ─── Celery Beat Scheduler ────────────────────────────────────────
+  - type: worker
+    name: autostream-beat
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: celery -A app.worker.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
+    region: singapore
+    branch: main
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: FERNET_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false

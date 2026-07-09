@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { 
     Key, ShieldCheck, Zap, Bot, Send, Eye, EyeOff, Save, 
     RefreshCw, AlertCircle, CheckCircle2, Youtube, Facebook, Instagram, 
-    Settings2, Plus, Trash2, Unlock, ExternalLink, UploadCloud, X, Loader2, Play
+    Settings2, Plus, Trash2, Unlock, ExternalLink, UploadCloud, X, Loader2, Play, Globe
 } from 'lucide-react'
 import { 
     listApiKeys, deleteApiKey, unlockApiKey, testApiKey, 
@@ -177,6 +177,7 @@ export default function ApiVault() {
                     { id: 'google', label: 'Google / YouTube', icon: Youtube },
                     { id: 'meta', label: 'Meta (FB/IG)', icon: Facebook },
                     { id: 'gemini', label: 'Gemini AI', icon: Bot },
+                    { id: 'openrouter', label: 'OpenRouter', icon: Globe },
                 ].map(t => (
                     <div key={t.id} className={clsx("tab", activeTab === t.id && "on")} onClick={() => setActiveTab(t.id)}>
                         <t.icon size={14} className="mr-2" /> {t.label}
@@ -193,7 +194,7 @@ export default function ApiVault() {
                             "w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0",
                             k.is_locked ? "bg-[#d630311a] text-[#d63031]" : "bg-[#00b8941a] text-[#00b894]"
                         )}>
-                            {k.service_name === 'google' ? <Youtube size={24} /> : k.service_name === 'meta' ? <Facebook size={24} /> : <Bot size={24} />}
+                            {k.service_name === 'google' ? <Youtube size={24} /> : k.service_name === 'meta' ? <Facebook size={24} /> : k.service_name === 'openrouter' ? <Globe size={24} /> : <Bot size={24} />}
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
@@ -300,7 +301,7 @@ export default function ApiVault() {
                             <div className="space-y-2">
                                 <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider">Service Type</label>
                                 <div className="grid grid-cols-3 gap-2">
-                                    {['gemini', 'meta', 'google'].map(s => (
+                                    {['gemini', 'meta', 'google', 'openrouter'].map(s => (
                                         <button 
                                             key={s} 
                                             onClick={() => setNewKey({...newKey, service: s})}

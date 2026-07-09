@@ -63,16 +63,26 @@ def process_video(
             'ty': 0.10
         }
 
-    # Map named positions to coordinates
-    position = settings.get('position', 'bottom-right')
+    # Map named positions to coordinates (both 3x3 grids and named keys)
+    position = settings.get('position', 'BR')
     pos_map = {
-        'top-left': (0.05, 0.05),
-        'top-right': (0.95, 0.05),
-        'bottom-left': (0.05, 0.95),
-        'bottom-right': (0.95, 0.95),
+        # 3x3 Grid mappings
+        'TL': (0.05, 0.05), 'TC': (0.50, 0.05), 'TR': (0.95, 0.05),
+        'ML': (0.05, 0.50), 'C':  (0.50, 0.50), 'MR': (0.95, 0.50),
+        'BL': (0.05, 0.95), 'BC': (0.50, 0.95), 'BR': (0.95, 0.95),
+        
+        # Legacy/named fallbacks
+        'top-left': (0.05, 0.05), 'top-right': (0.95, 0.05),
+        'bottom-left': (0.05, 0.95), 'bottom-right': (0.95, 0.95),
     }
     coords = pos_map.get(position, (0.95, 0.95))
     pos_x, pos_y = coords
+
+    # Map text positions dynamically for high-fidelity subtitle overlays
+    text_position = settings.get('text_pos', 'BC')
+    text_coords = pos_map.get(text_position, (0.50, 0.95))
+    settings.setdefault('tx', text_coords[0])
+    settings.setdefault('ty', text_coords[1])
 
 
     input_path = Path(input_path)
@@ -119,17 +129,14 @@ def process_video(
     filter_parts = []
     
     # 1. Uniquifier (crop + brightness shift) + Smart Reformatting
-    # We always do a tiny crop and brightness shift to avoid copyright hash detection.
-    base_filter = "crop=iw-1:ih-1,eq=brightness=0.01"
+    # We always do a tiny crop (even dimensions) and brightness shift to avoid copyright hash detection.
+    base_filter = "crop='2*trunc((iw-2)/2):2*trunc((ih-2)/2)',eq=brightness=0.01"
     
     # 2. Platform Specific Aspect Ratio Adjustment (9:16 for Reels/Shorts)
     if target_platform.lower() in ["instagram", "youtube_shorts", "facebook_reels"]:
-        # Logic: If video is wider than 9:16, we scale and crop to 9:16.
-        # Or better: "Blurred background" style if it's horizontal.
-        # For simplicity, we'll use a "smart crop to center 9:16" or "pad with blur".
-        # Let's do: scale to height, then crop width to 9:16.
-        reformat_filter = "scale=ih*9/16:ih,crop=iw:ih"
-        filter_parts.append(f"[0:v]{base_filter},{reformat_filter}[base]")
+        # Direct center crop to 9:16 while ensuring even dimensions to prevent ProcessingFailedError on upload
+        reformat_filter = "crop='2*trunc((ih-2)*9/16/2):2*trunc((ih-2)/2)',eq=brightness=0.01"
+        filter_parts.append(f"[0:v]{reformat_filter}[base]")
     else:
         filter_parts.append(f"[0:v]{base_filter}[base]")
 
@@ -148,7 +155,8 @@ def process_video(
             filter_parts.append(f"[{wm_idx}:v]colorkey={chroma_hex}:0.3:0.2[logo_clean]")
             filter_parts.append(f"[logo_clean]{curr_v}scale2ref=w=iw*{w_scale}:h=ih*{h_scale}[logo_sized][video_ref]")
 
-        filter_parts.append(f"[logo_sized]setsar=1[logo_final]")
+        opacity = settings.get('opacity', 0.8)
+        filter_parts.append(f"[logo_sized]setsar=1,format=rgba,colorchannelmixer=aa={opacity}[logo_final]")
         filter_parts.append(f"[video_ref][logo_final]overlay=x='(W-w)*{pos_x}':y='(H-h)*{pos_y}':shortest=1[v_wm]")
         curr_v = "[v_wm]"
         map_out = curr_v
@@ -162,12 +170,13 @@ def process_video(
         filter_str = ";".join(filter_parts)
         cmd.extend(["-filter_complex", filter_str, "-map", map_out])
     else:
-        cmd.extend(["-vf", "crop=iw-1:ih-1,eq=brightness=0.01"])
+        cmd.extend(["-vf", "crop='2*trunc((iw-2)/2):2*trunc((ih-2)/2)',eq=brightness=0.01"])
 
     cmd.extend([
         "-map_metadata", "-1", 
         "-map", "0:a?",
         "-c:v", "libx264", 
+        "-pix_fmt", "yuv420p",
         "-preset", "fast", 
         "-crf", "23",
         "-c:a", "aac", 

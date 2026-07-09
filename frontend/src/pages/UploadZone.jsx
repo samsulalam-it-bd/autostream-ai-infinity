@@ -36,7 +36,7 @@ export default function UploadZone() {
     const stats = {
         pending: accounts.reduce((acc, a) => acc + (a.stats?.pending || 0), 0),
         today: accounts.reduce((acc, a) => acc + (a.stats?.published || 0), 0),
-        need_setup: accounts.filter(a => !a.vault_id).length,
+        need_setup: accounts.filter(a => !((a.stats?.pending || 0) > 0 || (a.stats?.queue || 0) > 0)).length,
         total: accounts.reduce((acc, a) => acc + (a.stats?.published || 0) + (a.stats?.pending || 0), 0)
     }
 
@@ -105,8 +105,9 @@ export default function UploadZone() {
     }
 
     const filteredAccounts = accounts.filter(a => {
-        if (syncFilter === 'setup') return !a.vault_id
-        if (syncFilter === 'config') return !!a.vault_id
+        const isConfigured = (a.stats?.pending || 0) > 0 || (a.stats?.queue || 0) > 0
+        if (syncFilter === 'setup') return !isConfigured
+        if (syncFilter === 'config') return isConfigured
         return true
     })
 
@@ -220,8 +221,8 @@ export default function UploadZone() {
                                             <span className={clsx("badge", driveVids.length > 0 ? "b-purple" : "b-gray")}>
                                                 {driveVids.length} files
                                             </span>
-                                            <span className={clsx("badge", account.status === 'active' ? "b-green" : "b-red")}>
-                                                {account.status}
+                                            <span className={clsx("badge font-bold flex items-center gap-1", ((account.stats?.pending || 0) > 0 || (account.stats?.queue || 0) > 0) ? "b-green" : "b-red")}>
+                                                {((account.stats?.pending || 0) > 0 || (account.stats?.queue || 0) > 0) ? "✅ Configured" : "⚠️ Not Setup"}
                                             </span>
                                             <button onClick={(e) => handleAction(e, account.id)} className="btn btn-o btn-xs">
                                                 <RefreshCw className="w-3 h-3 mr-1" /> Sync

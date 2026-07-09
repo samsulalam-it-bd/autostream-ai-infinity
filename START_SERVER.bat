@@ -48,7 +48,7 @@ echo.
 
 REM Step 4: Health check
 echo [4/4] Checking backend health...
-curl -s http://localhost:8000/api/v1/health > NUL 2>&1
+curl -s http://localhost:8000/health > NUL 2>&1
 if %errorlevel% neq 0 (
     echo [!] Backend may still be starting. Check Docker logs.
     docker compose logs backend --tail=30

@@ -250,7 +250,7 @@ async def upload_to_facebook(
             from app.services.api_rotation import increment_usage
             from app.models.models import Account
             from sqlalchemy import select
-            async with async_session_factory() as db:
+            async with AsyncSessionLocal() as db:
                 import uuid
                 acc_res = await db.execute(select(Account).where(Account.id == uuid.UUID(account_id)))
                 acc = acc_res.scalar_one_or_none()
@@ -283,7 +283,11 @@ async def upload_photo_to_facebook(
                 },
                 files={"source": f},
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Facebook photo upload failed. Status: {response.status_code}. Body: {response.text}")
+                raise e
             data = response.json()
 
     photo_id = data.get("id")
@@ -308,22 +312,53 @@ async def upload_photo_to_facebook(
     return {"video_id": photo_id, "url": photo_url, "response": data}
 
 
-async def delete_drive_file(file_id: str, access_token: str):
-    """Moves a file to Google Drive trash instead of permanent deletion."""
+async def delete_drive_file(file_id: str, access_token: str, parent_id: Optional[str] = None):
+    """Deletes a file from Google Drive permanently, falling back to trash and parent removal if needed."""
+    from typing import Optional
     import httpx
     url = f"{GOOGLE_APIS_BASE}/drive/v3/files/{file_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
+    last_exception = None
+
+    # Try permanent delete
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Moving to trash is often more reliable and safer than permanent delete
+            response = await client.delete(url, headers=headers)
+            response.raise_for_status()
+            logger.info(f"Successfully permanently deleted Drive file: {file_id}")
+            return
+    except Exception as e:
+        last_exception = e
+        logger.warning(f"Failed to permanently delete Drive file {file_id}: {e}")
+
+    # Fallback 1: Try trashing the file
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.patch(url, headers=headers, json={"trashed": True})
             response.raise_for_status()
-            logger.info(f"Successfully moved Drive file to trash: {file_id}")
+            logger.info(f"Successfully trashed Drive file: {file_id}")
+            return
     except Exception as e:
-        logger.error(f"Failed to trash Drive file {file_id}: {e}")
-        # Log more details if it's a 403 to help user understand it's a permission issue
-        if "403" in str(e):
-            logger.warning("Drive 403 Error: This usually means the Google Account needs to be re-connected with 'Drive Edit' permissions checked.")
+        last_exception = e
+        logger.warning(f"Failed to trash Drive file {file_id}: {e}")
+
+    # Fallback 2: Try to remove the file from the parent folder (for shared drives/folders we don't own)
+    if parent_id:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                remove_url = f"{GOOGLE_APIS_BASE}/drive/v3/files/{file_id}"
+                params = {"removeParents": parent_id}
+                response = await client.patch(remove_url, headers=headers, params=params)
+                response.raise_for_status()
+                logger.info(f"Successfully removed Drive file {file_id} from parent folder {parent_id}")
+                return
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Failed to remove Drive file {file_id} from parent folder {parent_id}: {e}")
+
+    if last_exception:
+        logger.error(f"Failed all delete fallbacks for Drive file {file_id}. Last error: {last_exception}")
+        raise last_exception
 
 async def upload_to_drive_public(
     local_file_path: Path,
@@ -336,6 +371,11 @@ async def upload_to_drive_public(
     Returns a tuple of (public webContentLink, file_id) or (None, None) if it fails.
     """
     import httpx
+    import mimetypes
+    
+    # Guess the mime type
+    mime_type, _ = mimetypes.guess_type(filename)
+    mime_type = mime_type or "application/octet-stream"
     
     # Step 1: Upload the file
     upload_url = f"{GOOGLE_APIS_BASE}/upload/drive/v3/files?uploadType=multipart"
@@ -344,7 +384,7 @@ async def upload_to_drive_public(
     metadata = {
         "name": f"processed_{filename}",
         "parents": [folder_id],
-        "mimeType": "video/mp4"
+        "mimeType": mime_type
     }
 
     try:
@@ -352,7 +392,7 @@ async def upload_to_drive_public(
         with open(local_file_path, "rb") as f:
             files = {
                 "metadata": (None, json.dumps(metadata), "application/json"),
-                "file": (filename, f, "video/mp4"),
+                "file": (filename, f, mime_type),
             }
             async with httpx.AsyncClient(timeout=180.0) as client:
                 response = await client.post(upload_url, headers=headers, files=files)
@@ -523,6 +563,99 @@ async def upload_to_instagram(
     media_id = data.get("id")
     logger.info(f"Instagram upload complete. Media ID: {media_id}")
     return {"video_id": media_id, "url": f"https://www.instagram.com/reels/{media_id}/", "response": data}
+
+
+async def upload_photo_to_instagram(
+    image_path: str,
+    caption: str,
+    access_token: str,
+    ig_user_id: str,
+    google_access_token: str,
+    target_folder_id: str,
+) -> dict:
+    """
+    Upload a Photo/Image post to Instagram.
+    Instagram Graph API requires a public URL for image uploads.
+    We first upload the processed/raw image to the Google Drive public folder,
+    get its public direct link, and use it as `image_url` to create the container.
+    """
+    import asyncio
+    from pathlib import Path
+    
+    filename = Path(image_path).name
+    public_url, drive_file_id = await upload_to_drive_public(
+        local_file_path=Path(image_path),
+        filename=filename,
+        access_token=google_access_token,
+        folder_id=target_folder_id,
+    )
+    
+    if not public_url:
+        raise RuntimeError("Failed to upload image to Google Drive public folder to get public URL for Instagram.")
+        
+    api_version = "v19.0"
+    container_url = f"https://graph.facebook.com/{api_version}/{ig_user_id}/media"
+    
+    try:
+        # Create container
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                container_url,
+                data={
+                    "access_token": access_token,
+                    "image_url": public_url,
+                    "caption": caption[:2200],
+                },
+            )
+            if resp.status_code >= 400:
+                raise httpx.HTTPStatusError(
+                    f"Instagram image container create failed ({resp.status_code}): {resp.text[:500]}",
+                    request=resp.request,
+                    response=resp,
+                )
+            container_id = (resp.json() or {}).get("id")
+            if not container_id:
+                raise RuntimeError(f"Instagram image container create returned no id. body={resp.text[:500]}")
+
+        # Wait for processing (usually instant for images)
+        status_url = f"https://graph.facebook.com/{api_version}/{container_id}"
+        status_code = None
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for _ in range(12):
+                r = await client.get(status_url, params={"access_token": access_token, "fields": "status_code"})
+                if r.status_code >= 400:
+                    break
+                status_code = (r.json() or {}).get("status_code")
+                if status_code in ["FINISHED", "READY"] or not status_code:
+                    break
+                if status_code == "ERROR":
+                    raise RuntimeError(f"Instagram container processing ERROR. body={r.text[:500]}")
+                await asyncio.sleep(2)
+
+        # Publish container
+        publish_url = f"https://graph.facebook.com/{api_version}/{ig_user_id}/media_publish"
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(publish_url, data={"access_token": access_token, "creation_id": container_id})
+            if resp.status_code >= 400:
+                raise httpx.HTTPStatusError(
+                    f"Instagram media_publish failed ({resp.status_code}): {resp.text[:500]}",
+                    request=resp.request,
+                    response=resp,
+                )
+            data = resp.json()
+
+        media_id = data.get("id")
+        logger.info(f"Instagram photo upload complete. Media ID: {media_id}")
+        return {"video_id": media_id, "url": f"https://www.instagram.com/reels/{media_id}/", "response": data}
+        
+    finally:
+        # Clean up temporary public file from Google Drive
+        if drive_file_id:
+            try:
+                await delete_drive_file(drive_file_id, google_access_token, parent_id=target_folder_id)
+                logger.info(f"Successfully cleaned up temporary public Drive file: {drive_file_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary public Drive file {drive_file_id}: {e}")
 
 
 async def get_youtube_stats(video_id: str, access_token: str) -> dict:

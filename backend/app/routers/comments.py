@@ -41,6 +41,7 @@ async def create_or_update_comment_rule(rule_in: CommentRuleCreate, db: AsyncSes
         existing_rule.auto_reply_enabled = rule_in.auto_reply_enabled
         existing_rule.auto_dm_enabled = rule_in.auto_dm_enabled
         existing_rule.ai_persona = rule_in.ai_persona
+        existing_rule.custom_reply_text = rule_in.custom_reply_text
         await db.commit()
         await db.refresh(existing_rule)
         return existing_rule
@@ -110,9 +111,16 @@ async def handle_meta_webhook(request: Request, db: AsyncSession = Depends(get_d
                     # 1. Find the Account associated with this Meta Page ID
                     acc_result = await db.execute(select(Account).where(Account.channel_id == page_id))
                     acc = acc_result.scalar_one_or_none()
+                    if not acc:
+                        continue
+                        
                     from app.core.security import decrypt_token
-                    token = decrypt_token(acc.encrypted_access_token) if acc else ""
-                    if not acc or not token:
+                    try:
+                        token = decrypt_token(acc.encrypted_access_token)
+                    except Exception as token_err:
+                        logger.error(f"Failed to decrypt Meta page token: {token_err}")
+                        continue
+                    if not token:
                         continue
                         
                     # 2. Check if a CommentRule exists for this account
@@ -120,32 +128,27 @@ async def handle_meta_webhook(request: Request, db: AsyncSession = Depends(get_d
                     rule = rule_result.scalar_one_or_none()
                     
                     if rule and rule.auto_reply_enabled:
-                        # 3. Lookup Provider preferences
-                        pref_row = await db.execute(select(SystemSettings).where(SystemSettings.key == "AI_PROVIDER_COMMENTS"))
-                        pref = pref_row.scalar_one_or_none()
-                        provider = pref.value if pref else "gemini"
+                        if rule.custom_reply_text and rule.custom_reply_text.strip():
+                            ai_reply = rule.custom_reply_text
+                        else:
+                            # 3. Lookup Provider preferences
+                            pref_row = await db.execute(select(SystemSettings).where(SystemSettings.key == "AI_PROVIDER_COMMENTS"))
+                            pref = pref_row.scalar_one_or_none()
+                            provider = pref.value if pref else "gemini"
 
-                        # 4. Lookup Custom Key如果 not gemini
-                        api_key = None
-                        if provider != "gemini":
-                            key_row = await db.execute(select(ApiKeyVault).where(ApiKeyVault.service_name == provider))
-                            key_obj = key_row.scalar_one_or_none()
-                            if key_obj:
-                                api_key = key_obj.credentials_json.get("api_key")
+                            # 4. Lookup Custom Key
+                            api_key = None
+                            if provider != "gemini":
+                                key_row = await db.execute(select(ApiKeyVault).where(ApiKeyVault.service_name == provider))
+                                key_obj = key_row.scalar_one_or_none()
+                                if key_obj:
+                                    api_key = key_obj.credentials_json.get("api_key")
 
-                        # 5. Use chosen AI to generate the reply
-                        ai_reply = await generate_comment_reply(message, rule.ai_persona, provider=provider, api_key=api_key)
+                            # 5. Use chosen AI to generate the reply (leveraging secure api_key lookup & rotation limits)
+                            ai_reply = await generate_comment_reply(message, rule.ai_persona, provider=provider, api_key=api_key, db=db)
                         
                         if ai_reply:
-                            # Use Account token to reply
-                            from app.core.security import decrypt_token
-                            try:
-                                token = decrypt_token(acc.encrypted_access_token)
-                            except Exception as e:
-                                logger.error(f"Failed to decrypt Meta token for auto-reply: {e}")
-                                continue
-                            
-                            # Post Reply
+                            # Post Reply using already validated token
                             success = await post_reply_to_meta(comment_id, ai_reply, token)
                             
                             dm_sent = False

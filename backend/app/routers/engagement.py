@@ -24,6 +24,7 @@ class QuickGenRequest(BaseModel):
     topic: str
     platform: str
     style: str = "Viral"
+    provider: Optional[str] = "gemini"
 
 @router.post("/chat")
 async def ai_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
@@ -45,6 +46,7 @@ async def quick_generate(req: QuickGenRequest, db: AsyncSession = Depends(get_db
 Topic: {req.topic}
 Platform: {req.platform}
 Style: {req.style}
+Instructions: Incorporate today's latest trends and updates relevant to the topic. Ensure the content is fresh and highly engaging based on current real-world discussions.
 
 Return ONLY a valid JSON object:
 {{
@@ -54,40 +56,69 @@ Return ONLY a valid JSON object:
   "hashtags": ["#hashtag1", "#hashtag2"]
 }}"""
         
-        # 1. Try Vault first
-        vault_key = await get_active_api_key("gemini", db)
-        key = vault_key.credentials_json.get("api_key") if vault_key else settings.GEMINI_API_KEY
-        
-        if not key:
-            raise ValueError("No Gemini API key available")
+        if req.provider == "openrouter":
+            import httpx
+            vault_key = await get_active_api_key("openrouter", db)
+            key = vault_key.credentials_json.get("api_key") if vault_key else None
+            if not key:
+                raise ValueError("No OpenRouter API key available")
 
-        model = settings.GEMINI_MODEL or "gemini-2.0-flash"
-        
-        try:
-            response = await asyncio.to_thread(_gemini_generate_sync, key, model, prompt)
-            text = (getattr(response, "text", "") or "").strip()
+            model_name = "perplexity/llama-3.1-sonar-large-128k-online" # Live internet search
+            base_url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {key}", 
+                "Content-Type": "application/json"
+            }
+            payload = {"model": model_name, "messages": [{"role": "user", "content": prompt}], "max_tokens": 500}
             
-            # 2. Cleanup JSON
-            if text.startswith("```"):
-                lines = text.split("\n")
-                text = "\n".join(lines[1:-1] if lines[0].startswith("```") else lines)
-                
-            data = json.loads(text)
+            try:
+                async with httpx.AsyncClient() as client:
+                    res = await client.post(base_url, json=payload, headers=headers, timeout=45.0)
+                    if res.status_code == 429:
+                        raise Exception("429 Quota Exceeded")
+                    res.raise_for_status()
+                    text = res.json()["choices"][0]["message"]["content"].strip()
+                if vault_key:
+                    await increment_usage(vault_key.id, db)
+            except Exception as ai_err:
+                err_msg = str(ai_err).lower()
+                if "429" in err_msg or "quota" in err_msg:
+                    key_to_lock = vault_key.id if vault_key else "00000000-0000-0000-0000-000000000001"
+                    await report_quota_exceeded(key_to_lock, db, reason="QuickGen OpenRouter 429")
+                raise ai_err
+
+        else:
+            # 1. Try Vault first
+            vault_key = await get_active_api_key("gemini", db)
+            key = vault_key.credentials_json.get("api_key") if vault_key else settings.GEMINI_API_KEY
             
-            # 3. Track usage
-            if vault_key:
-                await increment_usage(vault_key.id, db)
-            else:
-                await increment_usage("00000000-0000-0000-0000-000000000001", db)
-                
-            return data
-        except Exception as ai_err:
-            # Handle rotation if quota hit
-            err_msg = str(ai_err).lower()
-            if ("429" in err_msg or "quota" in err_msg):
-                key_to_lock = vault_key.id if vault_key else "00000000-0000-0000-0000-000000000001"
-                await report_quota_exceeded(key_to_lock, db, reason="QuickGen 429")
-            raise ai_err
+            if not key:
+                raise ValueError("No Gemini API key available")
+
+            model = settings.GEMINI_MODEL or "gemini-2.0-flash"
+            
+            try:
+                response = await asyncio.to_thread(_gemini_generate_sync, key, model, prompt)
+                text = (getattr(response, "text", "") or "").strip()
+                if vault_key:
+                    await increment_usage(vault_key.id, db)
+                else:
+                    await increment_usage("00000000-0000-0000-0000-000000000001", db)
+            except Exception as ai_err:
+                # Handle rotation if quota hit
+                err_msg = str(ai_err).lower()
+                if ("429" in err_msg or "quota" in err_msg):
+                    key_to_lock = vault_key.id if vault_key else "00000000-0000-0000-0000-000000000001"
+                    await report_quota_exceeded(key_to_lock, db, reason="QuickGen 429")
+                raise ai_err
+
+        # 2. Cleanup JSON
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1] if lines[0].startswith("```") else lines)
+            
+        data = json.loads(text)
+        return data
     except Exception as e:
         logger.error(f"Quick Gen failed: {e}")
         # Fallback to a template if AI fails

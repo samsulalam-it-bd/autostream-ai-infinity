@@ -46,7 +46,7 @@ export const fetchWorkspaceSummary = (accountId) => api.get(`/workspace/${accoun
 
 // ── Videos & Drive ─────────────────────────────────────────────────────────
 export const fetchVideos = (status, unassigned) => api.get('/videos/', { params: { status_filter: status, unassigned_only: unassigned } })
-export const syncAccountNow = (accountId, folderLink) => api.post('/videos/sync-drive', { account_id: accountId, folder_link: folderLink || undefined })
+export const syncAccountNow = (accountId, folderLink, autoSchedule = true) => api.post('/videos/sync-drive', { account_id: accountId, folder_link: folderLink || undefined, auto_schedule: autoSchedule })
 export const pollTaskStatus = (taskId) => api.get(`/videos/task-status/${taskId}`)
 export const deleteVideo = (id) => api.delete(`/videos/${id}`)
 

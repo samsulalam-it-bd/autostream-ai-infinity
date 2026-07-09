@@ -7,7 +7,7 @@ import {
 import { 
     Youtube, Facebook, Instagram, Trash2, Edit2, RefreshCw, 
     Zap, Play, MoreVertical, X, Check, AlertTriangle, ShieldCheck, Plus, ExternalLink,
-    Eraser
+    Eraser, Settings
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -25,7 +25,32 @@ export default function Accounts() {
     const [loading, setLoading] = useState(true)
     const [activeOverlay, setActiveOverlay] = useState(null)
     const [showAddModal, setShowAddModal] = useState(false)
+    const [showSettingsModal, setShowSettingsModal] = useState(null)
     const [syncingAll, setSyncingAll] = useState(false)
+    const [now, setNow] = useState(new Date())
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setNow(new Date())
+        }, 1000)
+        return () => clearInterval(interval)
+    }, [])
+
+    const getAccountCountdown = (account) => {
+        if (!account.next_publish_iso) return null
+        
+        const nextTime = new Date(account.next_publish_iso)
+        const diffMs = nextTime.getTime() - now.getTime()
+        
+        if (diffMs <= 0) return "Publishing now..."
+        
+        const secs = Math.floor(diffMs / 1000)
+        const hours = Math.floor(secs / 3600)
+        const mins = Math.floor((secs % 3600) / 60)
+        const remainingSecs = secs % 60
+        
+        return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(remainingSecs).padStart(2, '0')}`
+    }
 
     // Auto-comment & AI Time Predictor states
     const [editAutoComment, setEditAutoComment] = useState(false)
@@ -45,6 +70,7 @@ export default function Accounts() {
             })
             alert('✅ Settings saved successfully!')
             setActiveOverlay(null)
+            setShowSettingsModal(null)
             loadAccounts()
         } catch (e) {
             console.error(e)
@@ -82,15 +108,27 @@ export default function Accounts() {
             await deleteAccount(id)
             setAccounts(accounts.filter(a => a.id !== id))
             setActiveOverlay(null)
+            setShowSettingsModal(null)
         } catch (e) { alert('Failed to delete') }
     }
 
     const handleAction = async (action, account) => {
         try {
-            if (action === 'sync') await syncAccountNow(account.id)
-            if (action === 'run' || action === 'instant') await instantPost(account.id)
+            if (action === 'sync') {
+                await syncAccountNow(account.id)
+                alert('🔄 Channel sync triggered successfully!')
+            }
+            if (action === 'run' || action === 'instant') {
+                const res = await instantPost(account.id)
+                alert(`⚡ Instant post triggered successfully!\n\nTask ID: ${res.data.task_id || 'N/A'}`)
+                setActiveOverlay(null)
+            }
             loadAccounts()
-        } catch (e) { console.error(e) }
+        } catch (e) {
+            console.error(e)
+            const errMsg = e.response?.data?.detail || e.message || 'Unknown error occurred'
+            alert(`❌ Action Failed:\n\n${errMsg}`)
+        }
     }
 
     const handleClearQueue = async (account) => {
@@ -100,6 +138,7 @@ export default function Accounts() {
             alert(`✅ ${res.data.message || 'Queue cleared successfully!'}`)
             loadAccounts()
             setActiveOverlay(null)
+            setShowSettingsModal(null)
         } catch (e) {
             console.error(e)
             alert('Failed to clear queue')
@@ -206,15 +245,22 @@ export default function Accounts() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-bold text-white text-[15px] truncate">{account.channel_name}</div>
-                                        <div className="text-[11px] text-[#7a85b0] mt-0.5 uppercase tracking-wide">
-                                            {account.platform} · {account.channel_id?.slice(0, 10)}...
+                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                            <span className={clsx("badge text-[9px] py-0.5 px-1.5 font-bold shrink-0 flex items-center gap-1", ((account.stats?.pending || 0) > 0 || (account.stats?.queue || 0) > 0) ? "b-green" : "b-red")}>
+                                                {((account.stats?.pending || 0) > 0 || (account.stats?.queue || 0) > 0) ? "✅ Configured" : "⚠️ Not Setup"}
+                                            </span>
+                                            <span className="text-[10px] text-[#7a85b0] uppercase tracking-wider font-semibold">
+                                                {account.platform}
+                                            </span>
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
                                         <div className="text-[13px] font-bold" style={{ background: cfg.color, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                                             {account.subscriber_count || '0'}
                                         </div>
-                                        <div className="text-[9px] text-[#3d4666] uppercase font-bold tracking-wider">Followers</div>
+                                        <div className="text-[9px] text-[#3d4666] uppercase font-bold tracking-wider">
+                                            {account.platform.toLowerCase() === 'youtube' ? 'Subscribers' : 'Followers'}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -235,8 +281,22 @@ export default function Accounts() {
                                     ))}
                                 </div>
 
-                                <div className="bg-[#131829] rounded-xl py-2 px-4 mb-4 text-center text-[12px] text-[#7a85b0]">
-                                    ⏰ Next: <span className="font-bold" style={{ color: cfg.color }}>{account.next_publish_time || 'No Schedule'}</span>
+                                <div className="bg-[#131829] rounded-xl py-2 px-4 mb-4 text-center text-[12px] text-[#7a85b0] flex items-center justify-center gap-1.5 flex-wrap">
+                                    <span>⏰ Next:</span>
+                                    <span className="font-bold" style={{ color: cfg.color }}>
+                                        {account.next_publish_time ? (
+                                            <span className="flex items-center gap-1.5">
+                                                <span>{account.next_publish_time}</span>
+                                                {getAccountCountdown(account) && (
+                                                    <span className="font-mono text-[10px] bg-white/5 border border-white/5 text-[#00cec9] py-0.5 px-1.5 rounded-md font-medium tracking-wide">
+                                                        ({getAccountCountdown(account)})
+                                                    </span>
+                                                )}
+                                            </span>
+                                        ) : (
+                                            'No Schedule'
+                                        )}
+                                    </span>
                                 </div>
 
                                 {/* Actions */}
@@ -247,14 +307,17 @@ export default function Accounts() {
                                     <button onClick={() => handleAction('sync', account)} className="flex-1 bg-[#131829] hover:bg-[#00cec91a] border border-white/5 hover:border-[#00cec9] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#00cec9]" title="Sync Drive">
                                         <RefreshCw className="w-4 h-4 mx-auto" />
                                     </button>
+                                    <button onClick={() => navigate(`/workspace/${account.id}`)} className="flex-1 bg-[#131829] hover:bg-[#6c5ce71a] border border-white/5 hover:border-[#6c5ce7] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#6c5ce7]" title="Setup Wizard">
+                                        <Edit2 className="w-4 h-4 mx-auto" />
+                                    </button>
                                     <button onClick={() => {
                                         setEditAutoComment(account.auto_comment || false)
                                         setEditCommentText(account.auto_comment_text || '')
                                         setEditAiTimePredictor(account.ai_time_predictor || false)
                                         setEditOptimalSlots(account.optimal_slots || {})
-                                        setActiveOverlay({ type: 'edit', id: account.id })
-                                    }} className="flex-1 bg-[#131829] hover:bg-[#6c5ce71a] border border-white/5 hover:border-[#6c5ce7] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#6c5ce7]" title="Edit">
-                                        <Edit2 className="w-4 h-4 mx-auto" />
+                                        setShowSettingsModal(account)
+                                    }} className="flex-1 bg-[#131829] hover:bg-[#a29bfe1a] border border-white/5 hover:border-[#a29bfe] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#a29bfe]" title="Channel Settings">
+                                        <Settings className="w-4 h-4 mx-auto" />
                                     </button>
                                     <button onClick={() => setActiveOverlay({ type: 'inst', id: account.id })} className="flex-1 bg-[#131829] hover:bg-[#fdcb6e1a] border border-white/5 hover:border-[#fdcb6e] p-2 rounded-lg transition-all text-[#7a85b0] hover:text-[#fdcb6e]" title="Instant Post">
                                         <Zap className="w-4 h-4 mx-auto" />
@@ -305,110 +368,6 @@ export default function Accounts() {
                                                 <button onClick={() => handleAction('instant', account)} className="flex-1 py-2 rounded-xl bg-gradient-to-r from-[#fdcb6e] to-[#e17055] text-white font-bold text-[13px]">⚡ Post Now</button>
                                             </div>
                                         </>
-                                    )}
-
-                                    {activeOverlay.type === 'edit' && (
-                                        <div className="w-full h-full flex flex-col pt-4">
-                                            <div className="text-[16px] font-bold text-white mb-2">Channel Settings</div>
-                                            <div className="text-[12px] text-[#7a85b0] mb-5">
-                                                Configure automated branding and Call-to-Actions for "{account.channel_name}".
-                                            </div>
-
-                                            {/* Auto-comment toggle */}
-                                            <div className="flex items-center justify-between w-full p-4 rounded-2xl bg-white/[0.02] border border-white/5 mb-4 transition-all hover:bg-white/[0.04]">
-                                                <div className="text-left">
-                                                    <div className="text-[13px] font-bold text-white">💬 Auto-Comment on Post</div>
-                                                    <div className="text-[10px] text-[#7a85b0] mt-0.5">Post a custom first comment immediately after uploading.</div>
-                                                </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={editAutoComment} 
-                                                        onChange={(e) => setEditAutoComment(e.target.checked)} 
-                                                        className="sr-only peer" 
-                                                    />
-                                                    <div className="w-10 h-6 bg-[#1b223c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#7a85b0] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#6c5ce7] peer-checked:after:bg-white"></div>
-                                                </label>
-                                            </div>
-
-                                            {/* Auto-comment text area */}
-                                            {editAutoComment && (
-                                                <div className="w-full space-y-1.5 mb-5 text-left animate-in">
-                                                    <div className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider pl-1">Comment Message</div>
-                                                    <textarea
-                                                        value={editCommentText}
-                                                        onChange={(e) => setEditCommentText(e.target.value)}
-                                                        placeholder="Write your Call-to-Action comment here... Supports emojis! 🚀"
-                                                        rows={3}
-                                                        className="w-full p-3.5 rounded-2xl bg-[#080b14] border border-white/10 text-white text-[13px] placeholder:text-[#3d4666] focus:outline-none focus:border-[#6c5ce7] transition-all resize-none custom-scrollbar"
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* AI Time Optimizer Toggle */}
-                                            <div className="flex items-center justify-between w-full p-4 rounded-2xl bg-white/[0.02] border border-white/5 mb-4 transition-all hover:bg-white/[0.04]">
-                                                <div className="text-left">
-                                                    <div className="text-[13px] font-bold text-white">📈 AI Optimal Posting Time Predictor</div>
-                                                    <div className="text-[10px] text-[#7a85b0] mt-0.5">Shift schedules dynamically to target peak audience activity.</div>
-                                                </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={editAiTimePredictor} 
-                                                        onChange={(e) => setEditAiTimePredictor(e.target.checked)} 
-                                                        className="sr-only peer" 
-                                                    />
-                                                    <div className="w-10 h-6 bg-[#1b223c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#7a85b0] after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#00cec9] peer-checked:after:bg-white"></div>
-                                                </label>
-                                            </div>
-
-                                            {/* Display predicted optimal times if enabled */}
-                                            {editAiTimePredictor && (
-                                                <div className="w-full p-3 rounded-2xl bg-[#00cec9]/5 border border-[#00cec9]/15 text-left mb-4 animate-in">
-                                                    <div className="text-[10.5px] font-bold text-[#00cec9] uppercase tracking-wider mb-1.5 pl-1">🧠 Calculated Peak Hours (AI Prediction)</div>
-                                                    <div className="grid grid-cols-4 gap-1.5 text-[11px] text-[#7a85b0]">
-                                                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => {
-                                                            const fullDay = day === 'Mon' ? 'Monday' : day === 'Tue' ? 'Tuesday' : day === 'Wed' ? 'Wednesday' : day === 'Thu' ? 'Thursday' : day === 'Fri' ? 'Friday' : day === 'Sat' ? 'Saturday' : 'Sunday';
-                                                            const time = editOptimalSlots[fullDay] || '18:00';
-                                                            return (
-                                                                <div key={day} className="bg-white/5 border border-white/5 rounded-lg p-1.5 text-center">
-                                                                    <div className="text-[9px] text-[#3d4666] font-bold uppercase">{day}</div>
-                                                                    <div className="text-white font-bold mt-0.5">{time}</div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Action buttons */}
-                                            <div className="flex flex-col gap-2 w-full mt-auto">
-                                                <div className="flex gap-2 w-full">
-                                                    <button 
-                                                        onClick={() => setActiveOverlay(null)} 
-                                                        className="flex-1 py-2.5 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[13px] border border-white/5 transition-all hover:bg-[#131829]/80"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleSaveSettings(account.id)} 
-                                                        disabled={savingSettings}
-                                                        className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#6c5ce7] to-[#00cec9] text-white font-bold text-[13px] disabled:opacity-50 transition-all hover:opacity-90"
-                                                    >
-                                                        {savingSettings ? 'Saving...' : 'Save Settings'}
-                                                    </button>
-                                                </div>
-                                                <button 
-                                                    onClick={() => {
-                                                        setActiveOverlay(null)
-                                                        navigate(`/workspace/${account.id}`)
-                                                    }} 
-                                                    className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-[12px] border border-white/5 transition-all"
-                                                >
-                                                    ⚙️ Open Workspace Wizard
-                                                </button>
-                                            </div>
-                                        </div>
                                     )}
 
                                     {activeOverlay.type === 'clear' && (
@@ -543,6 +502,135 @@ export default function Accounts() {
                         </div>
                         <div className="p-8 bg-[#131829]/50 border-t border-white/5 flex justify-end">
                             <button onClick={() => setShowAddModal(false)} className="px-8 py-3 rounded-2xl bg-[#131829] text-[#7a85b0] font-bold">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        
+            {/* ── Settings Modal ─────────────────────────────────── */}
+            {showSettingsModal && (
+                <div 
+                    className="fixed inset-0 z-[100] grid place-items-center justify-center bg-[#080b14fb] backdrop-blur-2xl px-4 py-10"
+                    style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh' }}
+                >
+                    <div className="bg-[#0d1120] border border-white/10 w-full max-w-2xl rounded-[32px] overflow-hidden shadow-2xl flex flex-col relative animate-in zoom-in-95 duration-200">
+                        <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                            <h2 className="text-xl font-black text-white flex items-center gap-3">
+                                <div className="p-2 bg-[#a29bfe20] rounded-xl text-[#a29bfe]">
+                                    <Settings size={24} />
+                                </div>
+                                Channel Settings
+                            </h2>
+                            <button onClick={() => setShowSettingsModal(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-[#7a85b0] hover:text-white hover:bg-white/10 transition-all">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 sm:p-8 overflow-y-auto max-h-[70vh] custom-scrollbar space-y-8">
+                            <div className="text-[14px] text-[#7a85b0] bg-[#6c5ce710] p-4 rounded-2xl border border-[#6c5ce720]">
+                                Configure automated branding and Call-to-Actions for <strong className="text-white">"{showSettingsModal.channel_name}"</strong>.
+                            </div>
+
+                            {/* Auto-comment toggle */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full p-5 rounded-2xl bg-white/[0.02] border border-white/5 transition-all hover:bg-white/[0.04] gap-4">
+                                <div className="text-left">
+                                    <div className="text-[15px] font-bold text-white flex items-center gap-2">
+                                        💬 Auto-Comment on Post
+                                    </div>
+                                    <div className="text-[12px] text-[#7a85b0] mt-1">Post a custom first comment immediately after uploading.</div>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={editAutoComment} 
+                                        onChange={(e) => setEditAutoComment(e.target.checked)} 
+                                        className="sr-only peer" 
+                                    />
+                                    <div className="w-12 h-7 bg-[#1b223c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#7a85b0] after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-[#6c5ce7] peer-checked:after:bg-white"></div>
+                                </label>
+                            </div>
+
+                            {/* Auto-comment text area */}
+                            {editAutoComment && (
+                                <div className="w-full space-y-2 text-left animate-in fade-in slide-in-from-top-4">
+                                    <div className="text-[12px] text-[#a29bfe] font-bold uppercase tracking-wider pl-1">Comment Message</div>
+                                    <textarea
+                                        value={editCommentText}
+                                        onChange={(e) => setEditCommentText(e.target.value)}
+                                        placeholder="Write your Call-to-Action comment here... Supports emojis! 🚀"
+                                        rows={4}
+                                        className="w-full p-4 rounded-2xl bg-[#080b14] border border-white/10 text-white text-[14px] placeholder:text-[#3d4666] focus:outline-none focus:border-[#6c5ce7] transition-all resize-none custom-scrollbar shadow-inner"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="h-px w-full bg-white/5"></div>
+
+                            {/* AI Time Optimizer Toggle */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full p-5 rounded-2xl bg-white/[0.02] border border-white/5 transition-all hover:bg-white/[0.04] gap-4">
+                                <div className="text-left">
+                                    <div className="text-[15px] font-bold text-white flex items-center gap-2">
+                                        📈 AI Optimal Posting Time
+                                    </div>
+                                    <div className="text-[12px] text-[#7a85b0] mt-1">Shift schedules dynamically to target peak audience activity.</div>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={editAiTimePredictor} 
+                                        onChange={(e) => setEditAiTimePredictor(e.target.checked)} 
+                                        className="sr-only peer" 
+                                    />
+                                    <div className="w-12 h-7 bg-[#1b223c] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[#7a85b0] after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-[#00cec9] peer-checked:after:bg-white"></div>
+                                </label>
+                            </div>
+
+                            {/* Display predicted optimal times if enabled */}
+                            {editAiTimePredictor && (
+                                <div className="w-full p-5 rounded-2xl bg-[#00cec9]/5 border border-[#00cec9]/15 text-left animate-in fade-in slide-in-from-top-4">
+                                    <div className="text-[12px] font-bold text-[#00cec9] uppercase tracking-wider mb-3 pl-1 flex items-center gap-2">
+                                        🧠 Calculated Peak Hours (AI)
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px] text-[#7a85b0]">
+                                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => {
+                                            const fullDay = day === 'Mon' ? 'Monday' : day === 'Tue' ? 'Tuesday' : day === 'Wed' ? 'Wednesday' : day === 'Thu' ? 'Thursday' : day === 'Fri' ? 'Friday' : day === 'Sat' ? 'Saturday' : 'Sunday';
+                                            const time = editOptimalSlots[fullDay] || '18:00';
+                                            return (
+                                                <div key={day} className="bg-[#080b14] border border-white/5 rounded-xl p-3 text-center shadow-inner">
+                                                    <div className="text-[11px] text-[#3d4666] font-bold uppercase">{day}</div>
+                                                    <div className="text-white font-bold mt-1 text-[15px]">{time}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-6 border-t border-white/5 bg-white/[0.01] flex flex-col sm:flex-row gap-3">
+                            <button 
+                                onClick={() => {
+                                    setShowSettingsModal(null)
+                                    navigate(`/workspace/${showSettingsModal.id}`)
+                                }} 
+                                className="flex-1 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-[14px] border border-white/5 transition-all flex items-center justify-center gap-2"
+                            >
+                                ⚙️ Open Workspace Wizard
+                            </button>
+                            <div className="flex gap-3 flex-1">
+                                <button 
+                                    onClick={() => setShowSettingsModal(null)} 
+                                    className="flex-1 py-3.5 rounded-xl bg-[#131829] text-[#7a85b0] font-bold text-[14px] border border-white/5 transition-all hover:bg-[#131829]/80"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={() => handleSaveSettings(showSettingsModal.id)} 
+                                    disabled={savingSettings}
+                                    className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-[#6c5ce7] to-[#00cec9] text-white font-bold text-[14px] disabled:opacity-50 transition-all hover:opacity-90 shadow-[0_0_20px_rgba(108,92,231,0.2)]"
+                                >
+                                    {savingSettings ? 'Saving...' : 'Save Settings'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

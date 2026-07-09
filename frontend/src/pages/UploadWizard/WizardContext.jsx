@@ -18,7 +18,8 @@ const initialState = {
         customTitle: "",
         customDescription: "",
         tags: "",
-        addWatermark: false
+        addWatermark: false,
+        video_editing: true
     },
     editorElements: [], // { id, type: 'logo'|'text', x, y, width, height, content }
 

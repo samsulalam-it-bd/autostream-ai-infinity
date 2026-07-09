@@ -119,19 +119,34 @@ export default function Step3MetadataEditor() {
                         </div>
                     )}
 
-                    <div className="pt-6 mt-4 border-t border-white/10">
-                        <label className="flex items-center gap-3 cursor-pointer group">
+                    <div className="pt-6 mt-4 border-t border-white/10 space-y-4">
+                        <label className="flex items-start gap-3 cursor-pointer group">
                             <input
                                 type="checkbox"
-                                checked={config.addWatermark || false}
-                                onChange={(e) => handleConfigChange('addWatermark', e.target.checked)}
-                                className="w-4 h-4 text-brand-500 bg-white/5 border-white/20 focus:ring-brand-500 rounded"
+                                checked={config.video_editing !== false}
+                                onChange={(e) => handleConfigChange('video_editing', e.target.checked)}
+                                className="w-4 h-4 text-brand-500 bg-white/5 border-white/20 focus:ring-brand-500 rounded mt-0.5"
                             />
                             <div className="flex flex-col">
-                                <span className="text-sm font-medium text-white group-hover:text-brand-300 transition-colors">Apply AutoStream Watermark</span>
-                                <span className="text-xs text-white/40">Optional. Helps deter content theft when distributing across networks.</span>
+                                <span className="text-sm font-medium text-white group-hover:text-brand-300 transition-colors">Enable Visual Video Editing & Uniquifier</span>
+                                <span className="text-xs text-white/40">Apply text overlays, logos, and anti-copyright filters. If disabled, raw videos will be uploaded directly.</span>
                             </div>
                         </label>
+
+                        {config.video_editing !== false && (
+                            <label className="flex items-start gap-3 cursor-pointer group animate-in fade-in duration-200">
+                                <input
+                                    type="checkbox"
+                                    checked={config.addWatermark || false}
+                                    onChange={(e) => handleConfigChange('addWatermark', e.target.checked)}
+                                    className="w-4 h-4 text-brand-500 bg-white/5 border-white/20 focus:ring-brand-500 rounded mt-0.5"
+                                />
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-white group-hover:text-brand-300 transition-colors">Apply AutoStream Watermark</span>
+                                    <span className="text-xs text-white/40">Optional. Helps deter content theft when distributing across networks.</span>
+                                </div>
+                            </label>
+                        )}
                     </div>
                 </div>
 
@@ -145,18 +160,29 @@ export default function Step3MetadataEditor() {
                             <p className="text-xs text-white/50 mt-1">Drag and resize elements directly on the canvas.</p>
                         </div>
 
-                        <div className="flex gap-2">
-                            <button onClick={addTextElement} className="btn-secondary py-1.5 px-3 text-xs flex gap-1 items-center">
-                                <Plus className="w-3 h-3" /> Text
-                            </button>
-                            <button onClick={addLogoElement} className="btn-secondary py-1.5 px-3 text-xs flex gap-1 items-center">
-                                <Plus className="w-3 h-3" /> Logo
-                            </button>
-                        </div>
+                        {config.video_editing !== false && (
+                            <div className="flex gap-2">
+                                <button onClick={addTextElement} className="btn-secondary py-1.5 px-3 text-xs flex gap-1 items-center">
+                                    <Plus className="w-3 h-3" /> Text
+                                </button>
+                                <button onClick={addLogoElement} className="btn-secondary py-1.5 px-3 text-xs flex gap-1 items-center">
+                                    <Plus className="w-3 h-3" /> Logo
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {/* The Drag & Drop Visual Canvas */}
-                    <AdvancedMediaEditor videoSrc={videoSrc} selectedVideoId={previewVideo?.id} />
+                    <div className="relative">
+                        <AdvancedMediaEditor videoSrc={videoSrc} selectedVideoId={previewVideo?.id} />
+                        {config.video_editing === false && (
+                            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center text-center p-6 border border-white/5 z-25 animate-in fade-in duration-300">
+                                <Settings2 className="w-12 h-12 text-white/20 mb-3" />
+                                <h4 className="text-sm font-bold text-white mb-1">Visual Editing Disabled</h4>
+                                <p className="text-xs text-white/40 max-w-sm">Raw media from your Google Drive folder will be published directly without watermark, text overlays, or logos.</p>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="flex gap-2 pt-2 text-xs text-white/40">
                         * Overlays applied here will be rendered onto all selected videos during the processing phase.

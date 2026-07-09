@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.0-flash"
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/accounts/oauth/google/callback")
 
+    # Other AI Models
+    GROK_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+
     # Meta
     META_CLIENT_ID: str = ""
     META_CLIENT_SECRET: str = ""
@@ -45,7 +50,7 @@ class Settings(BaseSettings):
 
     # If true, after a successful publish the system will attempt to delete the
     # original source video from Google Drive (requires Drive scope).
-    DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH: bool = False
+    DELETE_SOURCE_DRIVE_FILE_AFTER_PUBLISH: bool = True
 
     # Frontend
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")

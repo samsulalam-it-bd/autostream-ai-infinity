@@ -78,6 +78,8 @@ async def get_valid_google_credentials(account, db) -> Credentials:
         expiry=expiry,
     )
 
+    creds.account_id = account.id
+
     now_utc = datetime.utcnow()
     needs_refresh = (
         not access_token
@@ -131,4 +133,5 @@ async def get_valid_google_credentials(account, db) -> Credentials:
     await db.commit()
 
     logger.info(f"[TokenService] Token refreshed for '{account.channel_name}'.")
+    creds.account_id = account.id
     return creds

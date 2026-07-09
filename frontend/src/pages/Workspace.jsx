@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
     fetchAccounts, updateWorkspaceSettings, syncAccountNow, pollTaskStatus,
-    fetchVideos, createAutoDrip
+    fetchVideos, createAutoDrip, clearQueueByAccounts
 } from '../lib/api'
 import {
     ChevronDown, Folder, HardDrive, RefreshCw, CheckCircle2,
@@ -38,7 +38,9 @@ export default function WorkspaceWizard() {
         logo_url: '',
         watermark_pos: 'TR',
         add_watermark: true,
+        video_editing: true,
         delete_from_drive: false,
+        prefer_drive_metadata: true,
         desc_template: 'Check out our latest content! 🔥 Subscribe for more amazing videos every day!\n\n#autostream #viral #subscribe',
         tags: '#autostream #viral #trending #youtube #2026',
         watermark_opacity: 0.8,
@@ -82,7 +84,7 @@ export default function WorkspaceWizard() {
 
         try {
             // Trigger sync with the folder link
-            const res = await syncAccountNow(selectedAccounts[0], driveUrl)
+            const res = await syncAccountNow(selectedAccounts[0], driveUrl, false)
             const taskId = res.data.task_id
 
             if (!taskId) {
@@ -155,10 +157,13 @@ export default function WorkspaceWizard() {
                 })
             ))
 
+            // 2. Clear the existing unpublished queue first to prevent duplicate/overlapping schedules
+            await clearQueueByAccounts(selectedAccounts)
+
             const isImgMode = formData.facebook_post_type === 'image' && selectedAccounts.some(id => accounts.find(a => a.id === id)?.platform === 'facebook');
             const filteredMedia = foundVideos.filter(v => isImgMode ? v.media_type === 'IMAGE' : v.media_type !== 'IMAGE');
 
-            // 2. Trigger Auto-Drip scheduling
+            // 3. Trigger Auto-Drip scheduling
             await createAutoDrip({
                 account_ids: selectedAccounts,
                 video_ids: filteredMedia.map(v => v.id),
@@ -241,8 +246,8 @@ export default function WorkspaceWizard() {
                                         {acc.platform === 'youtube' ? '▶' : acc.platform === 'facebook' ? 'f' : '◉'}
                                     </div>
                                     <div className="flex-1">
-                                        <div className="font-bold text-white">{acc.name}</div>
-                                        <div className="text-xs text-[#7a85b0]">{acc.platform} · {acc.subscribers_count || 0} followers</div>
+                                        <div className="font-bold text-white">{acc.channel_name}</div>
+                                        <div className="text-xs text-[#7a85b0]">{acc.platform} · {acc.subscriber_count || 0} {acc.platform.toLowerCase() === 'youtube' ? 'subscribers' : 'followers'}</div>
                                     </div>
                                     <div className={clsx(
                                         "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
@@ -361,6 +366,39 @@ export default function WorkspaceWizard() {
                                                     </div>
                                                 ))}
                                             </div>
+                                 {/* Premium Video Editing Toggle Switch */}
+                        <div className="p-6 bg-gradient-to-r from-[#6c5ce710] to-white/[0.01] border border-white/5 rounded-3xl flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-[#6c5ce720] rounded-2xl border border-[#6c5ce740] flex items-center justify-center">
+                                    <Wand2 size={20} className="text-[#6c5ce7]" />
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="text-[13px] font-bold text-white flex items-center gap-2">
+                                        Autonomous Video Branding & Uniquifier
+                                    </div>
+                                    <div className="text-[10px] text-[#7a85b0]">
+                                        Automatically apply anti-copyright filters, aspect ratio reformatting, logos, opacity adjustments, and text overlays during Drive publishing.
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className={clsx("text-xs font-bold transition-colors", formData.video_editing ? "text-[#00b894]" : "text-[#7a85b0]")}>
+                                    {formData.video_editing ? "ACTIVE" : "DISABLED (RAW UPLOAD)"}
+                                </span>
+                                <button 
+                                    onClick={() => setFormData({...formData, video_editing: !formData.video_editing})}
+                                    className={clsx(
+                                        "w-14 h-7 rounded-full transition-all relative p-1 cursor-pointer",
+                                        formData.video_editing ? "bg-[#6c5ce7]" : "bg-white/10"
+                                    )}
+                                >
+                                    <div className={clsx(
+                                        "w-5 h-5 bg-white rounded-full transition-all shadow-md absolute top-1",
+                                        formData.video_editing ? "right-1" : "left-1"
+                                    )} />
+                                </button>
+                            </div>
+                        </div>
                                         </div>
                                     );
                                 })()}
@@ -404,56 +442,79 @@ export default function WorkspaceWizard() {
                                             onChange={(e) => setFormData({...formData, tags: e.target.value})}
                                         />
                                     </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Title Mode</label>
+                                            <select
+                                                value={formData.title_mode}
+                                                onChange={(e) => setFormData({ ...formData, title_mode: e.target.value })}
+                                                className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
+                                            >
+                                                <option value="ai_auto">🤖 AI Auto Generate</option>
+                                                <option value="filename">📝 Use File Name</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center justify-between mt-5">
+                                            <div className="space-y-1">
+                                                <div className="text-[12px] font-bold text-white flex items-center gap-2">
+                                                    <HardDrive size={16} className="text-[#00b894]" /> Drive Metadata (.txt)
+                                                </div>
+                                                <div className="text-[10px] text-[#3d4666]">Use txt files in folder if available</div>
+                                            </div>
+                                            <button 
+                                                onClick={() => setFormData({...formData, prefer_drive_metadata: !formData.prefer_drive_metadata})}
+                                                className={clsx(
+                                                    "w-12 h-6 rounded-full transition-all relative p-1",
+                                                    formData.prefer_drive_metadata ? "bg-[#00b894]" : "bg-white/10"
+                                                )}
+                                            >
+                                                <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.prefer_drive_metadata ? "translate-x-6" : "translate-x-0")} />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    {/* Logo Toggle */}
-                                    <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl flex items-center justify-between">
-                                        <div className="space-y-1">
-                                            <div className="text-[12px] font-bold text-white flex items-center gap-2">
-                                                <Layout size={16} className="text-[#6c5ce7]" /> Branding
+                                <div className={clsx("space-y-8 transition-all duration-300", !formData.video_editing && "opacity-30 pointer-events-none select-none")}>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {/* Logo Toggle */}
+                                        <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <div className="text-[12px] font-bold text-white flex items-center gap-2">
+                                                    <Layout size={16} className="text-[#6c5ce7]" /> Branding
+                                                </div>
+                                                <div className="text-[10px] text-[#3d4666]">Enable Logo / Watermark</div>
                                             </div>
-                                            <div className="text-[10px] text-[#3d4666]">Enable Logo / Watermark</div>
+                                            <button 
+                                                onClick={() => setFormData({...formData, add_watermark: !formData.add_watermark})}
+                                                className={clsx(
+                                                    "w-12 h-6 rounded-full transition-all relative p-1",
+                                                    formData.add_watermark ? "bg-[#6c5ce7]" : "bg-white/10"
+                                                )}
+                                            >
+                                                <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.add_watermark ? "translate-x-6" : "translate-x-0")} />
+                                            </button>
                                         </div>
-                                        <button 
-                                            onClick={() => setFormData({...formData, add_watermark: !formData.add_watermark})}
-                                            className={clsx(
-                                                "w-12 h-6 rounded-full transition-all relative p-1",
-                                                formData.add_watermark ? "bg-[#6c5ce7]" : "bg-white/10"
-                                            )}
-                                        >
-                                            <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.add_watermark ? "translate-x-6" : "translate-x-0")} />
-                                        </button>
-                                    </div>
-                                    <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl flex items-center justify-between">
-                                        <div className="space-y-1">
-                                            <div className="text-[12px] font-bold text-white flex items-center gap-2">
-                                                <Trash2 size={16} className="text-[#ff7675]" /> Storage
+                                        <div className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl flex items-center justify-between">
+                                            <div className="space-y-1">
+                                                <div className="text-[12px] font-bold text-white flex items-center gap-2">
+                                                    <Trash2 size={16} className="text-[#ff7675]" /> Storage
+                                                </div>
+                                                <div className="text-[10px] text-[#3d4666]">Delete from Drive after upload</div>
                                             </div>
-                                            <div className="text-[10px] text-[#3d4666]">Delete from Drive after upload</div>
+                                            <button 
+                                                onClick={() => setFormData({...formData, delete_from_drive: !formData.delete_from_drive})}
+                                                className={clsx(
+                                                    "w-12 h-6 rounded-full transition-all relative p-1",
+                                                    formData.delete_from_drive ? "bg-[#ff7675]" : "bg-white/10"
+                                                )}
+                                            >
+                                                <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.delete_from_drive ? "translate-x-6" : "translate-x-0")} />
+                                            </button>
                                         </div>
-                                        <button 
-                                            onClick={() => setFormData({...formData, delete_from_drive: !formData.delete_from_drive})}
-                                            className={clsx(
-                                                "w-12 h-6 rounded-full transition-all relative p-1",
-                                                formData.delete_from_drive ? "bg-[#ff7675]" : "bg-white/10"
-                                            )}
-                                        >
-                                            <div className={clsx("w-4 h-4 bg-white rounded-full transition-all shadow-sm", formData.delete_from_drive ? "translate-x-6" : "translate-x-0")} />
-                                        </button>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Title Mode</label>
-                                        <select
-                                            value={formData.title_mode}
-                                            onChange={(e) => setFormData({ ...formData, title_mode: e.target.value })}
-                                            className="w-full bg-[#131829] border border-white/5 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#6c5ce7] text-white"
-                                        >
-                                            <option value="ai_auto">🤖 AI Auto Generate</option>
-                                            <option value="filename">📝 Use File Name</option>
-                                        </select>
-                                    </div>
                                     <div className="space-y-2">
                                         <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Output Size</label>
                                         <select
@@ -545,11 +606,46 @@ export default function WorkspaceWizard() {
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* Dynamic Sliders (Canva-style) */}
+                                        <div className="border-t border-white/5 pt-4 space-y-4">
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                                    <span className="text-[#7a85b0]">Watermark Size</span>
+                                                    <span className="text-[#6c5ce7]">{formData.watermark_size || 15}%</span>
+                                                </div>
+                                                <input 
+                                                    type="range" 
+                                                    min="5" 
+                                                    max="40" 
+                                                    step="1"
+                                                    value={formData.watermark_size || 15}
+                                                    onChange={(e) => setFormData({ ...formData, watermark_size: parseInt(e.target.value) })}
+                                                    className="w-full accent-[#6c5ce7] h-1 bg-[#131829] rounded-lg cursor-pointer"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                                    <span className="text-[#7a85b0]">Watermark Opacity</span>
+                                                    <span className="text-[#6c5ce7]">{Math.round((formData.watermark_opacity || 0.8) * 100)}%</span>
+                                                </div>
+                                                <input 
+                                                    type="range" 
+                                                    min="0.1" 
+                                                    max="1.0" 
+                                                    step="0.05"
+                                                    value={formData.watermark_opacity || 0.8}
+                                                    onChange={(e) => setFormData({ ...formData, watermark_opacity: parseFloat(e.target.value) })}
+                                                    className="w-full accent-[#6c5ce7] h-1 bg-[#131829] rounded-lg cursor-pointer"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="lg:col-span-5 space-y-6">
+                            <div className={clsx("lg:col-span-5 space-y-6 transition-all duration-300", !formData.video_editing && "opacity-20 pointer-events-none select-none")}>
                                 <div className="flex items-center justify-between">
                                     <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-[0.2em] block">Live Frame Preview</label>
                                     <div className="flex items-center gap-1 bg-[#131829] p-1 rounded-lg border border-white/5">
@@ -610,12 +706,39 @@ export default function WorkspaceWizard() {
                                         )}>
                                             {formData.logo_url ? (
                                                 formData.logo_url.match(/\.(mp4|webm|ogg)$/i) || document.getElementById('logo-up')?.files[0]?.type.startsWith('video') ? (
-                                                    <video src={formData.logo_url} className="w-16 h-16 object-cover rounded-lg shadow-xl border border-[#6c5ce750]" autoPlay loop muted />
+                                                    <video 
+                                                        src={formData.logo_url} 
+                                                        style={{ 
+                                                            width: `${(formData.watermark_size || 15) * 4}px`, 
+                                                            height: `${(formData.watermark_size || 15) * 4}px`,
+                                                            opacity: formData.watermark_opacity || 0.8
+                                                        }}
+                                                        className="object-cover rounded-lg shadow-xl border border-[#6c5ce750]" 
+                                                        autoPlay loop muted 
+                                                    />
                                                 ) : (
-                                                    <img src={formData.logo_url} className="w-16 h-16 object-contain rounded-lg shadow-xl" alt="Logo" />
+                                                    <img 
+                                                        src={formData.logo_url} 
+                                                        style={{ 
+                                                            width: `${(formData.watermark_size || 15) * 4}px`, 
+                                                            height: `${(formData.watermark_size || 15) * 4}px`,
+                                                            opacity: formData.watermark_opacity || 0.8
+                                                        }}
+                                                        className="object-contain rounded-lg shadow-xl" 
+                                                        alt="Logo" 
+                                                    />
                                                 )
                                             ) : (
-                                                <div className="w-16 h-16 bg-[#6c5ce740] backdrop-blur-md border border-[#6c5ce740] rounded-lg flex items-center justify-center text-[10px] font-black text-white">LOGO</div>
+                                                <div 
+                                                    style={{ 
+                                                        width: `${(formData.watermark_size || 15) * 4}px`, 
+                                                        height: `${(formData.watermark_size || 15) * 4}px`,
+                                                        opacity: formData.watermark_opacity || 0.8
+                                                    }}
+                                                    className="bg-[#6c5ce740] backdrop-blur-md border border-[#6c5ce740] rounded-lg flex items-center justify-center text-[10px] font-black text-white"
+                                                >
+                                                    LOGO
+                                                </div>
                                             )}
                                         </div>
 

@@ -43,7 +43,7 @@ echo.
 echo [2/3] Waiting for backend to be ready (max 120 seconds)...
 set /a _wait_s=0
 :_wait_backend
-curl -s -f http://localhost:8000/api/v1/health >nul 2>&1
+curl -s -f http://localhost:8000/health >nul 2>&1
 if %errorlevel%==0 goto _backend_ready
 set /a _wait_s+=1
 if %_wait_s% GEQ 120 goto _backend_timeout

@@ -163,8 +163,9 @@ class UploadSchedule(Base):
 
     @property
     def media_type(self) -> str:
-        if self.video and hasattr(self.video, 'media_type') and self.video.media_type:
-            return self.video.media_type.value
+        if "video" in self.__dict__ and self.video:
+            if hasattr(self.video, 'media_type') and self.video.media_type:
+                return self.video.media_type.value
         return "VIDEO"
 
 
@@ -188,6 +189,7 @@ class CommentRule(Base):
     auto_reply_enabled = Column(Boolean, default=True)
     auto_dm_enabled = Column(Boolean, default=False)
     ai_persona = Column(String, default="Helpful and friendly")  # Prompt context for Gemini
+    custom_reply_text = Column(String, nullable=True)  # Static response text if supplied
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     account = relationship("Account", back_populates="comment_rules")

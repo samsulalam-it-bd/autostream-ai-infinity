@@ -127,7 +127,8 @@ async def get_system_report_msg() -> str:
     from app.routers.dashboard import get_system_report
     try:
         async with AsyncSessionLocal() as db:
-            report = await get_system_report(db)
+            report_obj = await get_system_report(db)
+            report = report_obj.dict()
             
         msg = (
             f"📊 <b>AutoStream System Report</b>\n\n"

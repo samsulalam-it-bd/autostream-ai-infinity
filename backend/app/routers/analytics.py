@@ -20,7 +20,7 @@ async def get_analytics_overview(db: AsyncSession = Depends(get_db)):
             func.sum(Account.subscriber_count).label("subscribers")
         ).group_by(Account.platform)
     )
-    platform_totals = {row[0].value: int(row[1] or 0) for row in platforms_query}
+    platform_totals = {getattr(row[0], "value", row[0]): int(row[1] or 0) for row in platforms_query}
     total_followers = sum(platform_totals.values())
     
     # Query cumulative metrics from UploadSchedule (real published items)
@@ -44,12 +44,13 @@ async def get_analytics_overview(db: AsyncSession = Depends(get_db)):
     # Calculate the platform with the highest views
     platform_views_query = await db.execute(
         select(
-            UploadSchedule.platform,
+            Account.platform,
             func.sum(UploadSchedule.view_count).label("views")
-        ).where(UploadSchedule.published_at != None)
-        .group_by(UploadSchedule.platform)
+        ).join(Account, UploadSchedule.account_id == Account.id)
+        .where(UploadSchedule.published_at != None)
+        .group_by(Account.platform)
     )
-    platform_views = {row[0].value: int(row[1] or 0) for row in platform_views_query}
+    platform_views = {getattr(row[0], "value", row[0]): int(row[1] or 0) for row in platform_views_query}
     
     # Default platform is instagram if none has views yet
     recommend_platform = "instagram"

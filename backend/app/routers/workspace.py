@@ -69,8 +69,8 @@ async def get_workspace_summary(account_id: uuid.UUID, db: AsyncSession = Depend
         "next_upload": next_up_res.scalar_one_or_none(),
         "scheduled_until": last_up_res.scalar_one_or_none(),
         "branding_catalog": {
-            "watermark_enabled": account.automation_settings.get("add_watermark", last_branding.get("add_watermark", False)),
-            "position": account.automation_settings.get("watermark_position", last_branding.get("watermark_position", "bottom-right")),
+            "watermark_enabled": (account.automation_settings or {}).get("add_watermark", last_branding.get("add_watermark", False)),
+            "position": (account.automation_settings or {}).get("watermark_position", last_branding.get("watermark_position", "bottom-right")),
             "has_logo": "logo" in str(last_branding),
         },
         "automation_settings": account.automation_settings or {}
@@ -93,7 +93,7 @@ async def get_account_pipeline(account_id: uuid.UUID, limit: int = 50, db: Async
         pipeline.append({
             "id": s.id,
             "video_id": v.id,
-            "title": s.metadata_overrides.get("title") if s.metadata_overrides else v.ai_title or v.original_filename,
+            "title": (s.metadata_overrides or {}).get("title") or v.ai_title or v.original_filename,
             "scheduled_time": s.scheduled_time,
             "is_published": s.is_published,
             "published_url": s.published_url,
@@ -114,10 +114,19 @@ async def update_automation_settings(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
-    current = dict(account.automation_settings or {})
-    current.update(settings)
-    account.automation_settings = current
+    if "drive_folder_link" in settings:
+        account.drive_folder_link = settings["drive_folder_link"]
+    
+    if "automation_settings" in settings:
+        account.automation_settings = settings["automation_settings"]
+    else:
+        current = dict(account.automation_settings or {})
+        current.update(settings)
+        account.automation_settings = current
+
+    if account.automation_settings and "drive_folder_link" in account.automation_settings:
+        account.drive_folder_link = account.automation_settings["drive_folder_link"]
     
     await db.commit()
-    return {"status": "success", "settings": account.automation_settings}
+    return {"status": "success", "settings": account.automation_settings, "drive_folder_link": account.drive_folder_link}
 

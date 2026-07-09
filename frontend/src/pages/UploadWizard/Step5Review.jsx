@@ -34,7 +34,8 @@ export default function Step5Review() {
                     custom_description: state.metadataConfig.customDescription,
                     tags: state.metadataConfig.tags,
                     editor_elements: state.editorElements, // Advanced Drag & Drop Overlay JSON
-                    add_watermark: state.metadataConfig.addWatermark
+                    add_watermark: state.metadataConfig.addWatermark,
+                    video_editing: state.metadataConfig.video_editing !== false
                 }
             };
 
@@ -124,9 +125,14 @@ export default function Step5Review() {
                     <button onClick={() => editStep(3)} className="absolute top-4 right-4 text-white/30 hover:text-brand-400 transition-colors opacity-0 group-hover:opacity-100"><Edit2 className="w-4 h-4" /></button>
                     <p className="text-xs text-brand-400 font-semibold tracking-wider uppercase mb-1">Step 3: Editor & Meta</p>
                     <div className="space-y-1 mt-3 text-sm">
+                        <div className="flex justify-between"><span className="text-white/40">Visual Editor:</span><span className={state.metadataConfig.video_editing !== false ? "text-green-400 font-medium" : "text-white/50 font-medium"}>{state.metadataConfig.video_editing !== false ? "Enabled" : "Disabled (RAW)"}</span></div>
+                        {state.metadataConfig.video_editing !== false && (
+                            <>
+                                <div className="flex justify-between"><span className="text-white/40">Watermark:</span><span className={state.metadataConfig.addWatermark ? "text-green-400 font-medium" : "text-white/50 font-medium"}>{state.metadataConfig.addWatermark ? "Enabled" : "Disabled"}</span></div>
+                                <div className="flex justify-between"><span className="text-white/40">Active Overlays:</span><span className="text-brand-300 font-medium">{state.editorElements.length} Visual Elements</span></div>
+                            </>
+                        )}
                         <div className="flex justify-between"><span className="text-white/40">Title Mode:</span><span className="text-white font-medium capitalize">{state.metadataConfig.mode}</span></div>
-                        <div className="flex justify-between"><span className="text-white/40">Watermark:</span><span className={state.metadataConfig.addWatermark ? "text-green-400 font-medium" : "text-white/50 font-medium"}>{state.metadataConfig.addWatermark ? "Enabled" : "Disabled (Optional)"}</span></div>
-                        <div className="flex justify-between"><span className="text-white/40">Active Overlays:</span><span className="text-brand-300 font-medium">{state.editorElements.length} Visual Elements</span></div>
                     </div>
                 </div>
 

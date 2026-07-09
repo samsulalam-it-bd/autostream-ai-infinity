@@ -29,6 +29,8 @@ export default function Engagement() {
     const [selectedAccountId, setSelectedAccountId] = useState('')
     const [keywords, setKeywords] = useState('')
     const [persona, setPersona] = useState('Helpful and friendly, use emojis. Keep it short.')
+    const [replyType, setReplyType] = useState('ai') // 'ai' or 'static'
+    const [customReplyText, setCustomReplyText] = useState('')
     const [autoReply, setAutoReply] = useState(true)
     const [autoDm, setAutoDm] = useState(false)
     const [saving, setSaving] = useState(false)
@@ -69,11 +71,15 @@ export default function Engagement() {
             if (existing) {
                 setKeywords(existing.custom_keywords?.join(', ') || '')
                 setPersona(existing.ai_persona || '')
+                setCustomReplyText(existing.custom_reply_text || '')
+                setReplyType(existing.custom_reply_text ? 'static' : 'ai')
                 setAutoReply(existing.auto_reply_enabled)
                 setAutoDm(existing.auto_dm_enabled)
             } else {
                 setKeywords('')
                 setPersona('Helpful and friendly, use emojis. Keep it short.')
+                setCustomReplyText('')
+                setReplyType('ai')
                 setAutoReply(true)
                 setAutoDm(false)
             }
@@ -122,7 +128,8 @@ export default function Engagement() {
                 custom_keywords: keywords.split(',').map(k => k.trim()).filter(k => k),
                 auto_reply_enabled: autoReply,
                 auto_dm_enabled: autoDm,
-                ai_persona: persona
+                ai_persona: replyType === 'ai' ? persona : '',
+                custom_reply_text: replyType === 'static' ? customReplyText : null
             }
             await api.post('/comments/rules', payload)
             loadRulesData()
@@ -374,17 +381,62 @@ export default function Engagement() {
                             </div>
 
                             <div>
-                                <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-1">AI Persona prompt context</label>
-                                <p className="text-[10.5px] text-[#5c678a] mb-2">Instruct the Gemini agent on how to speak and behave.</p>
-                                <textarea
-                                    required
-                                    rows="4"
-                                    value={persona}
-                                    onChange={(e) => setPersona(e.target.value)}
-                                    placeholder="e.g. You are a tech reviewer. Speak highly enthusiastically, use viral emojis, and suggest checking the link."
-                                    className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#6c5ce7] resize-none"
-                                />
+                                <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-2">Response Mode</label>
+                                <div className="grid grid-cols-2 gap-3 mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setReplyType('ai')}
+                                        className={clsx(
+                                            "py-2.5 px-4 rounded-xl text-[12px] font-bold border transition-all flex items-center justify-center gap-2",
+                                            replyType === 'ai'
+                                                ? "bg-[#6c5ce724] text-white border-[#6c5ce7] shadow-[0_0_12px_#6c5ce710]"
+                                                : "bg-[#131829] text-[#7a85b0] border-white/5 hover:border-white/10"
+                                        )}
+                                    >
+                                        🤖 AI Responder (Gemini)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setReplyType('static')}
+                                        className={clsx(
+                                            "py-2.5 px-4 rounded-xl text-[12px] font-bold border transition-all flex items-center justify-center gap-2",
+                                            replyType === 'static'
+                                                ? "bg-[#6c5ce724] text-white border-[#6c5ce7] shadow-[0_0_12px_#6c5ce710]"
+                                                : "bg-[#131829] text-[#7a85b0] border-white/5 hover:border-white/10"
+                                        )}
+                                    >
+                                        ✍️ Custom Static Reply
+                                    </button>
+                                </div>
                             </div>
+
+                            {replyType === 'ai' ? (
+                                <div>
+                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-1">AI Persona prompt context</label>
+                                    <p className="text-[10.5px] text-[#5c678a] mb-2">Instruct the Gemini agent on how to speak and behave.</p>
+                                    <textarea
+                                        required
+                                        rows="4"
+                                        value={persona}
+                                        onChange={(e) => setPersona(e.target.value)}
+                                        placeholder="e.g. You are a tech reviewer. Speak highly enthusiastically, use viral emojis, and suggest checking the link."
+                                        className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#6c5ce7] resize-none"
+                                    />
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="text-[10px] text-[#3d4666] font-bold uppercase tracking-wider block mb-1">Custom Reply Text</label>
+                                    <p className="text-[10.5px] text-[#5c678a] mb-2">Enter the exact static text the bot will reply with to every comment.</p>
+                                    <textarea
+                                        required
+                                        rows="4"
+                                        value={customReplyText}
+                                        onChange={(e) => setCustomReplyText(e.target.value)}
+                                        placeholder="e.g. Thanks for the comment! Check out our website link in the bio for more details."
+                                        className="w-full bg-[#131829] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-[#6c5ce7] resize-none"
+                                    />
+                                </div>
+                            )}
 
                             <div className="flex gap-6 pt-2">
                                 <label className="flex items-center cursor-pointer select-none">
@@ -442,7 +494,11 @@ export default function Engagement() {
                                                     <h4 className="text-[14.5px] font-bold text-white uppercase">
                                                         {acc ? `${acc.platform} — ${acc.channel_name}` : 'Channel'}
                                                     </h4>
-                                                    <p className="text-[12px] text-[#7a85b0] mt-1 italic">"{rule.ai_persona}"</p>
+                                                    {rule.custom_reply_text ? (
+                                                        <p className="text-[12px] text-[#00cec9] mt-1 italic font-medium">✍️ Custom: "{rule.custom_reply_text}"</p>
+                                                    ) : (
+                                                        <p className="text-[12px] text-[#7a85b0] mt-1 italic">🤖 AI: "{rule.ai_persona}"</p>
+                                                    )}
                                                 </div>
                                                 <button onClick={() => handleDeleteRule(rule.id)} className="p-1.5 text-[#d63031] hover:bg-[#d6303114] rounded-lg transition-all">
                                                     <Trash2 size={16} />

@@ -160,6 +160,40 @@ async def get_upload_chart(db: AsyncSession = Depends(get_db)):
     return days
 
 
+async def health_check(db: AsyncSession) -> dict:
+    """Helper to perform health check on DB, Redis, and Celery."""
+    status = {"database": "healthy", "redis": "healthy", "celery": "healthy"}
+    
+    # 1. Test Database
+    try:
+        await db.execute(select(1))
+    except Exception as e:
+        status["database"] = f"unhealthy: {str(e)[:100]}"
+        
+    # 2. Test Redis
+    try:
+        import redis
+        from app.core.config import settings
+        r = redis.from_url(settings.REDIS_URL, socket_timeout=3)
+        r.ping()
+    except Exception as e:
+        status["redis"] = f"unhealthy: {str(e)[:100]}"
+        
+    # 3. Test Celery (via Redis or broker check)
+    try:
+        from celery import Celery
+        from app.core.config import settings
+        celery_app = Celery("autostream", broker=settings.REDIS_URL)
+        inspect = celery_app.control.inspect(timeout=1.0)
+        active = inspect.active()
+        if not active:
+            status["celery"] = "unhealthy: No active workers"
+    except Exception as e:
+        status["celery"] = f"unhealthy: {str(e)[:100]}"
+        
+    return status
+
+
 # ── Full System Report ─────────────────────────────────────────────────────
 @router.get("/system-report", response_model=SystemReport)
 async def get_system_report(db: AsyncSession = Depends(get_db)):
@@ -172,7 +206,9 @@ async def get_system_report(db: AsyncSession = Depends(get_db)):
     fb_acc = await db.execute(select(func.count(Account.id)).where(Account.platform == PlatformEnum.FACEBOOK))
     ig_acc = await db.execute(select(func.count(Account.id)).where(Account.platform == PlatformEnum.INSTAGRAM))
     t_vid = await db.execute(select(func.count(SourceVideo.id)))
+    tot_sch = await db.execute(select(func.count(UploadSchedule.id)))
     pub_sch = await db.execute(select(func.count(UploadSchedule.id)).where(UploadSchedule.is_published == True))
+    pend_sch = await db.execute(select(func.count(UploadSchedule.id)).where(UploadSchedule.is_published == False))
     fail_sch = await db.execute(select(func.count(UploadSchedule.id)).where(UploadSchedule.error_message != None))
 
     # 2. API Keys breakdown
@@ -198,7 +234,9 @@ async def get_system_report(db: AsyncSession = Depends(get_db)):
             "facebook_accounts": fb_acc.scalar() or 0,
             "instagram_accounts": ig_acc.scalar() or 0,
             "total_videos": t_vid.scalar() or 0,
+            "total_schedules": tot_sch.scalar() or 0,
             "published_schedules": pub_sch.scalar() or 0,
+            "pending_schedules": pend_sch.scalar() or 0,
             "failed_schedules": fail_sch.scalar() or 0,
         },
         api_keys={

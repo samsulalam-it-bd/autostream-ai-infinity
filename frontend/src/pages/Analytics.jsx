@@ -65,8 +65,8 @@ export default function Analytics() {
     const KPI_ITEMS = [
         {
             label: 'Consolidated Followers',
-            value: overview?.followers?.toLocaleString() || '14,250',
-            growth: overview?.followers_growth || '+12.4%',
+            value: overview ? (overview.followers !== undefined ? overview.followers.toLocaleString() : '0') : '...',
+            growth: overview?.followers_growth || '+0.0%',
             icon: Users,
             color: '#a29bfe',
             bg: 'rgba(162, 155, 254, 0.1)',
@@ -74,8 +74,8 @@ export default function Analytics() {
         },
         {
             label: 'Cumulative Reach/Views',
-            value: overview?.views?.toLocaleString() || '482,900',
-            growth: overview?.views_growth || '+18.2%',
+            value: overview ? (overview.views !== undefined ? overview.views.toLocaleString() : '0') : '...',
+            growth: overview?.views_growth || '+0.0%',
             icon: Eye,
             color: '#00cec9',
             bg: 'rgba(0, 206, 201, 0.1)',
@@ -83,8 +83,8 @@ export default function Analytics() {
         },
         {
             label: 'Engagement & Likes',
-            value: overview?.likes?.toLocaleString() || '62,480',
-            growth: overview?.likes_growth || '+8.9%',
+            value: overview ? (overview.likes !== undefined ? overview.likes.toLocaleString() : '0') : '...',
+            growth: overview?.likes_growth || '+0.0%',
             icon: ThumbsUp,
             color: '#fdcb6e',
             bg: 'rgba(253, 203, 110, 0.1)',
@@ -92,8 +92,8 @@ export default function Analytics() {
         },
         {
             label: 'Average Engagement Rate',
-            value: overview?.engagement_rate || '5.4%',
-            growth: overview?.engagement_growth || '+1.2%',
+            value: overview?.engagement_rate || '0.0%',
+            growth: overview?.engagement_growth || '+0.0%',
             icon: TrendingUp,
             color: '#e84393',
             bg: 'rgba(232, 67, 147, 0.1)',

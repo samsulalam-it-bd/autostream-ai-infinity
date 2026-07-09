@@ -154,6 +154,65 @@ Strict Rules for {platform.upper()}:
                 logger.error("All available Gemini keys exhausted or failed.")
                 return _fallback_metadata()
 
+    # --- OPENROUTER ---
+    elif provider == "openrouter":
+        import httpx
+        import base64
+        from app.services.api_rotation import get_active_api_key, report_quota_exceeded, increment_usage
+        from app.database import AsyncSessionLocal
+
+        model_name = "google/gemini-2.0-flash" # default OpenRouter model for vision/text
+        base_url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        content = [{"type": "text", "text": prompt}]
+        for path in frame_paths:
+            if Path(path).exists():
+                with open(path, "rb") as image_file:
+                    b64 = base64.b64encode(image_file.read()).decode('utf-8')
+                    content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+        
+        async with AsyncSessionLocal() as db:
+            for _retry in range(3):
+                vault_key = await get_active_api_key("openrouter", db)
+                key = vault_key.credentials_json.get("api_key") if vault_key else api_key
+                
+                if not key:
+                    logger.warning("No OpenRouter API key available. Using fallback metadata.")
+                    return _fallback_metadata()
+
+                headers = {
+                    "Authorization": f"Bearer {key}", 
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5173",
+                    "X-Title": "AutoStream AI Infinity"
+                }
+                payload = {"model": model_name, "messages": [{"role": "user", "content": content}], "max_tokens": 500}
+
+                try:
+                    async with httpx.AsyncClient() as client:
+                        res = await client.post(base_url, json=payload, headers=headers, timeout=45.0)
+                        if res.status_code == 429:
+                            raise Exception("429 Quota Exceeded")
+                        res.raise_for_status()
+                        response_text = res.json()["choices"][0]["message"]["content"].strip()
+                    
+                    if vault_key:
+                        await increment_usage(vault_key.id, db)
+                    break
+                except Exception as e:
+                    err_msg = str(e).lower()
+                    if "429" in err_msg or "quota" in err_msg:
+                        logger.warning(f"OpenRouter Key Quota Exceeded. Reporting and rotating...")
+                        if vault_key:
+                            await report_quota_exceeded(vault_key.id, db, reason="429 Quota Exceeded")
+                        continue
+                    else:
+                        logger.error(f"OpenRouter vision analysis failed: {e}")
+                        return _fallback_metadata()
+            else:
+                logger.error("All available OpenRouter keys exhausted or failed.")
+                return _fallback_metadata()
+
     # --- GROK / OPENAI ---
     elif provider in ["grok", "openai"]:
         import httpx

@@ -80,7 +80,8 @@ async def sync_drive_folder(req: DriveSyncRequest, background_tasks: BackgroundT
     if not folder_id:
         return {"error": "Invalid Drive folder link", "synced": 0}
     
-    task = sync_drive_task.apply_async(args=[folder_link, str(req.account_id)], queue="default")
+    task = sync_drive_task.apply_async(args=[folder_link, str(req.account_id), req.auto_schedule], queue="default")
+
     return {"task_id": task.id, "folder_id": folder_id, "message": "Drive sync task queued."}
 
 

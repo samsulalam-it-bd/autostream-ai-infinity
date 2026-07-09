@@ -20,30 +20,149 @@ async def instant_post_next(
 ):
     """
     Find the next pending schedule for an account and trigger it immediately.
-    Used by the 'Instant Post' button in the UI.
+    If no pending schedules exist, find the next unpublished source video from the
+    account's synced Google Drive folder, create a schedule for it, and run it.
     """
     account_id = req.get("account_id")
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id required")
     
-    # 1. Find next pending
+    # Always create a new ad-hoc schedule to upload the next video raw (without editing) from Google Drive.
+    # This leaves existing scheduled posts in the queue untouched.
     from sqlalchemy import select, and_
     import uuid
-    from app.models.models import UploadSchedule
+    from app.models.models import UploadSchedule, Account, SourceVideo
+    from app.services.uploader import extract_folder_id_from_link, list_drive_folder_videos
+    from app.services.token_service import get_valid_google_credentials
+    from app.models.models import PlatformEnum, AccountStatusEnum
+    from datetime import datetime, timezone
     
-    result = await db.execute(
-        select(UploadSchedule)
-        .where(and_(
-            UploadSchedule.account_id == (uuid.UUID(account_id) if isinstance(account_id, str) else account_id),
-            UploadSchedule.is_published == False
-        ))
-        .order_by(UploadSchedule.scheduled_time.asc())
-        .limit(1)
+    try:
+        if isinstance(account_id, uuid.UUID):
+            target_uuid = account_id
+        elif isinstance(account_id, str):
+            target_uuid = uuid.UUID(account_id)
+        else:
+            target_uuid = uuid.UUID(str(account_id))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid UUID format for account_id: {str(e)}")
+    
+    acc_result = await db.execute(select(Account).where(Account.id == target_uuid))
+    account = acc_result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+        
+    if not account.drive_folder_link:
+        raise HTTPException(status_code=404, detail="No Google Drive folder link is configured for this account.")
+        
+    folder_id = extract_folder_id_from_link(account.drive_folder_link)
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="Invalid Google Drive folder link.")
+        
+    # Get credentials to read from Drive
+    google_account = account
+    if account.platform != PlatformEnum.YOUTUBE:
+        yt_result = await db.execute(
+            select(Account).where(
+                Account.platform == PlatformEnum.YOUTUBE,
+                Account.status == AccountStatusEnum.ACTIVE,
+            )
+        )
+        google_account = yt_result.scalars().first()
+        if not google_account:
+            raise HTTPException(status_code=400, detail="Drive access requires at least one active YouTube/Google account to authenticate API.")
+            
+    try:
+        creds = await get_valid_google_credentials(google_account, db)
+        access_token = creds.token
+        drive_files = await list_drive_folder_videos(folder_id, access_token)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to access Google Drive: {str(e)}")
+        
+    file_ids = [f["id"] for f in drive_files if "id" in f]
+    if not file_ids:
+        raise HTTPException(status_code=404, detail="No videos found in the linked Google Drive folder. Please upload videos first.")
+        
+    # Ensure all drive files are registered in SourceVideo
+    from app.models.models import MediaTypeEnum, VideoStatusEnum
+    existing_videos_result = await db.execute(
+        select(SourceVideo.drive_file_id).where(SourceVideo.drive_file_id.in_(file_ids))
     )
-    schedule = result.scalar_one_or_none()
+    existing_file_ids = set(existing_videos_result.scalars().all())
     
-    if not schedule:
-        raise HTTPException(status_code=404, detail="No pending schedules found for this account")
+    inserted_any = False
+    for f in drive_files:
+        fid = f.get("id")
+        if fid and fid not in existing_file_ids:
+            mime = f.get("mimeType", "").lower()
+            if "video" in mime:
+                mtype = MediaTypeEnum.VIDEO
+            elif "image" in mime:
+                mtype = MediaTypeEnum.IMAGE
+            else:
+                continue
+            
+            sv = SourceVideo(
+                id=uuid.uuid4(),
+                drive_file_id=fid,
+                drive_view_link=f.get("webViewLink"),
+                drive_download_link=f"https://www.googleapis.com/drive/v3/files/{fid}?alt=media",
+                original_filename=f.get("name"),
+                file_size_bytes=int(f.get("size")) if f.get("size") else None,
+                media_type=mtype,
+                status=VideoStatusEnum.PENDING
+            )
+            db.add(sv)
+            inserted_any = True
+            
+    if inserted_any:
+        await db.commit()
+
+    # Find synced videos in DB
+    video_result = await db.execute(
+        select(SourceVideo).where(SourceVideo.drive_file_id.in_(file_ids))
+    )
+    source_videos = video_result.scalars().all()
+    if not source_videos:
+        raise HTTPException(status_code=404, detail="No synced videos found in database. Please sync the channel folder first.")
+        
+    # Find already published/scheduled video IDs for this account
+    published_result = await db.execute(
+        select(UploadSchedule.video_id).where(UploadSchedule.account_id == target_uuid)
+    )
+    published_video_ids = set(published_result.scalars().all())
+    
+    # Pick the first video not yet published/scheduled on this account
+    next_video = None
+    for sv in source_videos:
+        if sv.id not in published_video_ids:
+            next_video = sv
+            break
+            
+    if not next_video:
+        raise HTTPException(status_code=404, detail="All synced videos in this folder have already been scheduled or published for this account.")
+        
+    # Create a new schedule scheduled for right now, with editing=False, watermark=False, delete_from_drive=True
+    schedule = UploadSchedule(
+        id=uuid.uuid4(),
+        account_id=target_uuid,
+        video_id=next_video.id,
+        scheduled_time=datetime.now(timezone.utc),
+        original_scheduled_time=datetime.now(timezone.utc),
+        is_published=False,
+        metadata_overrides={
+            "mode": "manual",
+            "custom_title_append": "",
+            "custom_description": "",
+            "tags": "",
+            "add_watermark": False,
+            "video_editing": False,
+            "delete_from_drive": True
+        }
+    )
+    db.add(schedule)
+    await db.commit()
+    await db.refresh(schedule)
 
     # 2. Trigger it
     from app.worker import process_and_upload_video
@@ -62,8 +181,9 @@ async def list_schedules(
     is_published: bool = None,
     db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy.orm import selectinload
     try:
-        query = select(UploadSchedule).order_by(UploadSchedule.scheduled_time)
+        query = select(UploadSchedule).options(selectinload(UploadSchedule.video)).order_by(UploadSchedule.scheduled_time)
         if is_published is not None:
             query = query.where(UploadSchedule.is_published == is_published)
         result = await db.execute(query)
@@ -76,7 +196,7 @@ async def list_schedules(
             from sqlalchemy import text
             await db.execute(text("ALTER TABLE upload_schedule ADD COLUMN IF NOT EXISTS metadata_overrides JSONB;"))
             await db.commit()
-            query = select(UploadSchedule).order_by(UploadSchedule.scheduled_time)
+            query = select(UploadSchedule).options(selectinload(UploadSchedule.video)).order_by(UploadSchedule.scheduled_time)
             if is_published is not None:
                 query = query.where(UploadSchedule.is_published == is_published)
             result = await db.execute(query)
@@ -129,6 +249,14 @@ async def create_auto_drip(req: AutoDripRequest, db: AsyncSession = Depends(get_
         req.total_days = max(1, (len(effective_video_ids) + freq - 1) // freq)
         if not req.start_datetime:
             req.start_datetime = datetime.now(timezone.utc)
+    elif req.settings:
+        req.daily_time_slots = req.settings.get("time_slots")
+        req.add_watermark = req.settings.get("add_watermark", True)
+        slots = req.daily_time_slots or []
+        slots_count = len(slots) if len(slots) > 0 else 1
+        req.total_days = max(1, (len(effective_video_ids) + slots_count - 1) // slots_count)
+        if not req.start_datetime:
+            req.start_datetime = datetime.now(timezone.utc)
 
     # Dump V2 Metadata for JSON storage
     v2_metadata_json = None
@@ -138,6 +266,17 @@ async def create_auto_drip(req: AutoDripRequest, db: AsyncSession = Depends(get_
             pass
         else:
             req.add_watermark = req.metadata_overrides.add_watermark
+    elif req.settings:
+        mode = req.settings.get("mode", "original")
+        v2_metadata_json = {
+            "mode": mode,
+            "ai_mode": (mode == "ai"),
+            "custom_description": req.settings.get("custom_description", ""),
+            "tags": req.settings.get("tags", ""),
+            "add_watermark": req.add_watermark,
+            "prefer_drive_metadata": req.settings.get("prefer_drive_metadata", True)
+        }
+
 
     total_videos = len(effective_video_ids)
     total_seconds = (req.total_days or 1) * 24 * 3600
@@ -540,9 +679,38 @@ async def run_pipeline_now(schedule_id: uuid.UUID, db: AsyncSession = Depends(ge
                 )
                 logger.info(f"[RunNow] Downloaded: {raw}")
 
-                # Step 2: FFmpeg processing (uniquify)
+                # Step 2: FFmpeg processing (uniquify with custom brand layout settings)
                 wm = getattr(s, "add_watermark", False) or False
-                proc = process_video(raw, add_watermark=wm)
+                
+                acc_settings = a.automation_settings or {}
+                video_editing_enabled = acc_settings.get("video_editing", True)
+                
+                if not video_editing_enabled:
+                    logger.info("[RunNow] Visual Video Editing is DISABLED. Uploading RAW video from Google Drive.")
+                    proc = raw
+                else:
+                    wm_pos = acc_settings.get("watermark_pos", "BR")
+                    wm_size = float(acc_settings.get("watermark_size", 15)) / 100.0
+                    wm_opacity = float(acc_settings.get("watermark_opacity", 0.8))
+                    
+                    text_text = acc_settings.get("overlay_text", "")
+                    text_pos = acc_settings.get("text_pos", "BC")
+                    text_color = acc_settings.get("text_color", "#ffffff")
+                    
+                    proc = process_video(
+                        raw, 
+                        add_watermark=wm,
+                        text_text=text_text,
+                        target_platform=a.platform.value,
+                        settings={
+                            'position': wm_pos,
+                            'width': wm_size,
+                            'height': wm_size,
+                            'opacity': wm_opacity,
+                            'text_pos': text_pos,
+                            'text_color': text_color
+                        }
+                    )
                 logger.info(f"[RunNow] FFmpeg done: {proc}")
 
                 # Step 3: Metadata

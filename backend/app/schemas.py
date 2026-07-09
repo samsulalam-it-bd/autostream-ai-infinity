@@ -38,6 +38,10 @@ class AccountStats(BaseModel):
     failed: int = 0
     queue: int = 0
 
+class DriveVideoOut(BaseModel):
+    name: str
+    size: Optional[str] = None
+
 class AccountOut(BaseModel):
     id: uuid.UUID
     platform: PlatformEnum
@@ -55,10 +59,13 @@ class AccountOut(BaseModel):
     ai_time_predictor: bool = False
     optimal_slots: Optional[dict] = None
     next_publish_time: Optional[str] = None
+    next_publish_iso: Optional[str] = None
     stats: Optional[AccountStats] = None
+    drive_videos: Optional[List[DriveVideoOut]] = []
     created_at: datetime
     class Config:
         from_attributes = True
+
 
 class AccountUpdate(BaseModel):
     status: Optional[AccountStatusEnum] = None
@@ -97,6 +104,7 @@ class ScheduleOut(BaseModel):
     like_count: int = 0
     comment_count: int = 0
     media_type: Optional[str] = None
+    video: Optional['SourceVideoOut'] = None
     created_at: datetime
 
     class Config:
@@ -127,6 +135,7 @@ class MetadataOverrides(BaseModel):
     tags: Optional[str] = None
     editor_elements: List[EditorElement] = Field(default_factory=list)
     add_watermark: Optional[bool] = False
+    video_editing: Optional[bool] = True
 
 class AutoDripRequest(BaseModel):
     # Legacy fields
@@ -147,6 +156,8 @@ class AutoDripRequest(BaseModel):
     media_pool: Optional[List[uuid.UUID]] = None
     schedule_config: Optional[ScheduleConfig] = None
     metadata_overrides: Optional[MetadataOverrides] = None
+    settings: Optional[dict] = None
+
 
 
 class ClearQueueRequest(BaseModel):
@@ -223,6 +234,7 @@ class CommentRuleCreate(BaseModel):
     auto_reply_enabled: bool = True
     auto_dm_enabled: bool = False
     ai_persona: str = "Helpful and friendly"
+    custom_reply_text: Optional[str] = None
 
 class CommentRuleOut(BaseModel):
     id: int
@@ -231,6 +243,7 @@ class CommentRuleOut(BaseModel):
     auto_reply_enabled: bool
     auto_dm_enabled: bool
     ai_persona: str
+    custom_reply_text: Optional[str] = None
     created_at: datetime
     class Config:
         from_attributes = True
@@ -253,6 +266,8 @@ class CommentLogOut(BaseModel):
 class DriveSyncRequest(BaseModel):
     folder_link: Optional[str] = None
     account_id: uuid.UUID
+    auto_schedule: Optional[bool] = True
+
 
 
 # ── Stats ──────────────────────────────────────────────────────────────────

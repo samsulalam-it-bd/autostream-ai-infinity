@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.models import Account, ChannelGroup, AccountStatusEnum, PlatformEnum
+from app.models.models import Account, ChannelGroup, AccountStatusEnum, PlatformEnum, ApiKeyVault
 from app.schemas import AccountCreate, AccountOut, AccountUpdate, ChannelGroupCreate, ChannelGroupOut
 from app.core.security import encrypt_token
 
@@ -79,14 +79,48 @@ async def list_accounts(
             UploadSchedule.account_id == acc.id, UploadSchedule.is_published == False
         ))
 
+        # Next publish time
+        next_s = await db.execute(
+            select(UploadSchedule.scheduled_time)
+            .where(
+                UploadSchedule.account_id == acc.id,
+                UploadSchedule.is_published == False,
+                UploadSchedule.scheduled_time >= now
+            )
+            .order_by(UploadSchedule.scheduled_time.asc())
+            .limit(1)
+        )
+        next_time = next_s.scalar()
+
         acc.stats = {
             'published': pub_res.scalar() or 0,
             'pending': pen_res.scalar() or 0,
             'failed': fail_res.scalar() or 0,
             'queue': que_res.scalar() or 0
         }
+        acc.next_publish_time = next_time.strftime("%I:%M %p") if next_time else None
+        acc.next_publish_iso = next_time.isoformat() if next_time else None
+
+        # Fetch pending/queued drive videos for this account
+        from app.models.models import SourceVideo
+        sched_vids_res = await db.execute(
+            select(SourceVideo.original_filename, SourceVideo.file_size_bytes)
+            .join(UploadSchedule, SourceVideo.id == UploadSchedule.video_id)
+            .where(UploadSchedule.account_id == acc.id, UploadSchedule.is_published == False)
+            .order_by(UploadSchedule.scheduled_time.asc())
+        )
+        sched_vids = sched_vids_res.all()
+        acc.drive_videos = [
+            {
+                "name": row[0] or "Unnamed Video",
+                "size": f"{row[1] / (1024 * 1024):.1f} MB" if row[1] else "Queued"
+            }
+            for row in sched_vids
+        ]
+
         enriched.append(acc)
     return enriched
+
 
 
 @router.post("/", response_model=AccountOut, status_code=status.HTTP_201_CREATED)

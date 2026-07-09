@@ -71,9 +71,17 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
         base_url = "https://api.x.ai/v1/chat/completions" if provider == "grok" else "https://api.openai.com/v1/chat/completions"
         model_name = "grok-2-latest" if provider == "grok" else "gpt-4o-mini"
         
-        # For simplicity, these currently don't use vault unless added later
-        key = api_key or (settings.GROK_API_KEY if provider == "grok" else settings.OPENAI_API_KEY)
+        key = api_key
+        vault_key = None
         
+        if not key and db:
+            vault_key = await get_active_api_key(provider, db)
+            if vault_key:
+                key = vault_key.credentials_json.get("api_key")
+        
+        if not key:
+            key = settings.GROK_API_KEY if provider == "grok" else settings.OPENAI_API_KEY
+            
         if not key:
             logger.warning(f"No {provider} API key configured.")
             return None
@@ -94,17 +102,37 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
                 res = await client.post(base_url, json=payload, headers=headers, timeout=15.0)
                 res.raise_for_status()
                 reply = res.json()["choices"][0]["message"]["content"].strip()
+                
+                if db and vault_key:
+                    await increment_usage(vault_key.id, db)
+                    
                 logger.info(f"Generated {provider} Reply: {reply}")
                 return reply
         except Exception as e:
             logger.error(f"{provider} auto-reply failed: {e}")
+            if db and vault_key:
+                from app.services.api_rotation import report_quota_exceeded
+                err_msg = str(e).lower()
+                if "429" in err_msg or "rate_limit" in err_msg or "quota" in err_msg:
+                    await report_quota_exceeded(vault_key.id, db, reason=f"{provider} 429 Quota Exceeded")
             return None
 
     elif provider == "anthropic":
-        key = api_key or settings.ANTHROPIC_API_KEY
+        key = api_key
+        vault_key = None
+        
+        if not key and db:
+            vault_key = await get_active_api_key("anthropic", db)
+            if vault_key:
+                key = vault_key.credentials_json.get("api_key")
+                
+        if not key:
+            key = settings.ANTHROPIC_API_KEY
+            
         if not key:
             logger.warning("No Anthropic API key configured.")
             return None
+            
         headers = {
             "x-api-key": key,
             "anthropic-version": "2023-06-01",
@@ -123,10 +151,19 @@ Your Reply (ONLY output the exact reply text, no quotes):"""
                 res = await client.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers, timeout=15.0)
                 res.raise_for_status()
                 reply = res.json()["content"][0]["text"].strip()
+                
+                if db and vault_key:
+                    await increment_usage(vault_key.id, db)
+                    
                 logger.info(f"Generated Anthropic Reply: {reply}")
                 return reply
         except Exception as e:
             logger.error(f"Anthropic auto-reply failed: {e}")
+            if db and vault_key:
+                from app.services.api_rotation import report_quota_exceeded
+                err_msg = str(e).lower()
+                if "429" in err_msg or "rate_limit" in err_msg or "quota" in err_msg:
+                    await report_quota_exceeded(vault_key.id, db, reason="anthropic 429 Quota Exceeded")
             return None
 
     return None
